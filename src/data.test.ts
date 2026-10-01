@@ -1,0 +1,12 @@
+import 'fake-indexeddb/auto';
+import {describe,it,expect,beforeEach} from 'vitest';
+import {action,database,snapshot} from './data';
+beforeEach(async()=>{const db=await database;for(const s of ['boards','pins','files','feedback','activity_log','outbox'])await db.clear(s);});
+describe('local action boundary',()=>{
+ it('atomically persists image, pin and outbox event',async()=>{const b=await action({type:'board.create',payload:{name:'Materials'}});const p=await action({type:'pin.save',payload:{board_id:b.id,note:'Blue',palette:['#aabbcc']},blob:new Blob(['sample'],{type:'image/png'})});const db=await database;expect(p.id).toMatch(/^[0-9A-HJKMNP-TV-Z]{26}$/);expect((await db.get('files',p.file_ref)).size).toBe(6);expect(await db.count('activity_log')).toBe(2);expect(await db.count('outbox')).toBe(2);expect((await snapshot()).pins[0].studio_id).toBe('local-studio');});
+ it('rejects missing board without partial writes',async()=>{await expect(action({type:'pin.save',payload:{board_id:'missing',note:'x'}})).rejects.toThrow();const db=await database;expect(await db.count('pins')).toBe(0);expect(await db.count('outbox')).toBe(0);});
+ it('rejects unsafe links',async()=>{const b=await action({type:'board.create',payload:{name:'Test'}});await expect(action({type:'pin.save',payload:{board_id:b.id,source_url:'javascript:alert(1)'}})).rejects.toThrow();expect((await snapshot()).pins).toHaveLength(0);});
+ it('moves and versions a pin, soft deletes a board and its pins',async()=>{const b=await action({type:'board.create',payload:{name:'One'}});const c=await action({type:'board.create',payload:{name:'Two'}});const p=await action({type:'pin.save',payload:{board_id:b.id,note:'keep'}});const moved=await action({type:'pin.move',id:p.id,payload:{board_id:c.id}});expect(moved.version).toBe(2);await action({type:'board.delete',id:c.id});expect((await snapshot()).pins).toHaveLength(0);expect((await(await database).get('pins',p.id)).deleted_at).toBeTruthy();});
+ it('keeps sharing unavailable until an authorized backend exists',async()=>{await expect(action({type:'board.share'})).rejects.toThrow('backend');expect(await(await database).count('outbox')).toBe(0);});
+ it('rejects a cover from a different board',async()=>{const b=await action({type:'board.create',payload:{name:'One'}});const c=await action({type:'board.create',payload:{name:'Two'}});const p=await action({type:'pin.save',payload:{board_id:c.id,note:'test'}});await expect(action({type:'board.update',id:b.id,payload:{cover_pin_id:p.id}})).rejects.toThrow();});
+});

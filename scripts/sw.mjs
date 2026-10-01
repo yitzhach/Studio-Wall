@@ -1,0 +1,5 @@
+import {readdirSync,writeFileSync,readFileSync} from 'node:fs';
+import {createHash} from 'node:crypto';
+const assets=readdirSync('dist/assets').map(x=>'/assets/'+x);
+const fingerprint=createHash('sha256').update(assets.join('|')+readFileSync('dist/index.html')).digest('hex').slice(0,12);
+writeFileSync('dist/sw.js',`const CACHE='studio-wall-${fingerprint}';const ASSETS=${JSON.stringify(['/', '/index.html','/manifest.webmanifest','/icon-192.png','/icon-512.png','/sample-plaster.webp',...assets])};self.addEventListener('install',e=>e.waitUntil(caches.open(CACHE).then(c=>c.addAll(ASSETS))));self.addEventListener('activate',e=>e.waitUntil(caches.keys().then(keys=>Promise.all(keys.filter(k=>k.startsWith('studio-wall-')&&k!==CACHE).map(k=>caches.delete(k)))).then(()=>self.clients.claim())));self.addEventListener('fetch',e=>{if(e.request.method!=='GET'||new URL(e.request.url).origin!==location.origin)return;e.respondWith(fetch(e.request).then(r=>{if(r.ok){const clone=r.clone();caches.open(CACHE).then(c=>c.put(e.request,clone));}return r;}).catch(()=>caches.match(e.request).then(r=>r||(e.request.mode==='navigate'?caches.match('/index.html'):Response.error()))));});`);
