@@ -1,7 +1,15 @@
-/** Start on grid whitespace so dragging a reference still moves the selected group. */
+/** Include the surrounding workspace gutters; card/control drags retain their own behavior. */
 export function bindMarquee(grid:HTMLElement, selected:Set<string>, finish:()=>void){
- grid.addEventListener('pointerdown',start=>{
-  if(start.button!==0||start.pointerType!=='mouse'||start.target!==grid)return;
+ const surface=grid.closest('main')||grid;
+ surface.addEventListener('pointerdown',event=>{
+  const start=event as PointerEvent;
+  if(start.button!==0||start.pointerType!=='mouse')return;
+  const target=start.target as Element;
+  if(target.closest('[data-drag-pin],button,a,input,textarea,select,label,dialog,[contenteditable]'))return;
+  if(target!==grid){
+   const bounds=grid.getBoundingClientRect();
+   if(start.clientY<bounds.top-36||start.clientY>bounds.bottom+64)return;
+  }
   start.preventDefault();
   const original=new Set(selected),additive=start.shiftKey||start.ctrlKey||start.metaKey;
   const x=start.clientX+window.scrollX,y=start.clientY+window.scrollY;

@@ -1,8 +1,13 @@
 # Studio Wall handoff
 
-Updated: 2026-10-01. Start here in a new chat; no old conversation is needed.
+Updated: 2026-10-02. Start here in a new chat; no old conversation is needed.
 
-## Latest update — mouse selection (2026-10-01)
+## Latest update — wider selection start area (2026-10-02)
+- Selection can now start in the workspace side gutters and blank space above/below the grid, rather than only the narrow image-edge padding. Increased top/bottom grid padding.
+- Image/card dragging and toolbar controls remain excluded from selection-box starts.
+- Validation: 12 tests and production build pass; test covers starting 40px outside the grid and excluding controls. Cloudflare rollout and physical browser QA remain unverified.
+
+## Previous update — mouse selection (2026-10-01)
 - Restored clean cards by default: selection circles appear only after choosing Select. Cmd/Ctrl-click and Shift-click remain available.
 - Left-click and drag from whitespace around/between references to draw a rectangular selection box. Intersecting cards highlight live; drag any highlighted card onto a board to copy/move the selected group.
 - Shift/Cmd/Ctrl while starting a box preserves the previous selection. Escape or pointer cancellation restores it. Clicking blank grid space clears it. Card drags and touch scrolling keep their previous behavior; touch selection uses Select.
