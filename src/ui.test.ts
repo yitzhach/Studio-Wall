@@ -32,5 +32,16 @@ it('creates a board, saves and edits an idea, searches, and previews feedback',a
  document.querySelector('#share-settings')!.dispatchEvent(new Event('submit',{bubbles:true,cancelable:true}));
  await vi.waitFor(async()=>expect((await snapshot()).boards.find(b=>b.name==='Client copies')?.share_settings?.mode).toBe('password'));
  expect((await snapshot()).boards.find(b=>b.name==='Client copies')?.visibility).toBe('private');
+ click('[data-pin]');click('#star-pin');await vi.waitFor(()=>expect(document.querySelector('#star-pin')?.getAttribute('aria-pressed')).toBe('true'));
+ (document.querySelector('#pin-comment textarea') as HTMLTextAreaElement).value='A client favorite';document.querySelector('#pin-comment')!.dispatchEvent(new Event('submit',{bubbles:true,cancelable:true}));
+ await vi.waitFor(()=>expect(document.querySelector('.pin-feedback article')?.textContent).toContain('client favorite'));
+ click('#modal .close');click('[data-nav="all"]');
+ const cards=Array.from(document.querySelectorAll<HTMLElement>('[data-pin]'));
+ cards[0].dispatchEvent(new MouseEvent('click',{bubbles:true,ctrlKey:true}));
+ document.querySelectorAll<HTMLElement>('[data-pin]')[1].dispatchEvent(new MouseEvent('click',{bubbles:true,shiftKey:true}));
+ expect(document.querySelectorAll('.is-selected')).toHaveLength(2);
+ click('[data-action="present"]');expect(document.querySelectorAll('.presentation figure')).toHaveLength(2);document.querySelector<HTMLDialogElement>('.presentation')!.close();
+ click('[data-filter="starred"]');expect(document.querySelectorAll('[data-pin]')).toHaveLength(1);
+ const original=(await snapshot()).boards.find(b=>b.name==='Client study')!;click(`[data-nav="${original.id}"]`);expect(document.querySelectorAll('[data-pin]')).toHaveLength(1);expect(document.querySelector('[data-filter="all"]')?.classList.contains('chosen')).toBe(true);
  const search=document.querySelector<HTMLInputElement>('#search')!;search.value='nonexistent';search.dispatchEvent(new Event('input'));expect(document.querySelectorAll('[data-pin]')).toHaveLength(0);
 });

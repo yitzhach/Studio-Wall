@@ -3,7 +3,7 @@ import {ulid} from 'ulid';
 export type Base={id:string;studio_id:string;created_at:string;updated_at:string;created_by:string;actor_type:'human'|'assistant';version:number;deleted_at:string|null};
 export type Board=Base & {name:string;description:string;cover_pin_id:string|null;visibility:'private'|'shared_link';position:number;share_settings?:{mode:'public'|'private'|'password';permission:'view'|'comment'|'contribute'}};
 export type Pin=Base & {board_id:string;file_ref:string|null;source_url:string;source_credit:string;is_own:boolean;note:string;tags:string[];palette:string[];linked_type:string|null;linked_id:string|null;meta:{kind:'image'|'idea'|'link';title:string}};
-export type Feedback=Base & {board_id:string;pin_id:string|null;text:string};
+export type Feedback=Base & {board_id:string;pin_id:string|null;text:string;starred?:boolean};
 export type Action={type:string;id?:string;payload?:any;blob?:Blob};
 export const STUDIO='local-studio';
 export const database=openDB('studio-wall-v1',1,{upgrade(db){for(const store of ['boards','pins','feedback','activity_log','outbox'])db.createObjectStore(store,{keyPath:'id'});db.createObjectStore('files');}});
@@ -33,8 +33,12 @@ export async function action(a:Action){
  if(p.source_url&&!/^https?:\/\//i.test(p.source_url))throw Error('Use a complete http or https link.');
  result={...b,board_id:p.board_id,file_ref:a.blob?ulid():null,source_url:p.source_url||'',source_credit:p.source_credit||'',is_own:!!p.is_own,note:p.note||'',tags:p.tags||[],palette:p.palette||[],linked_type:null,linked_id:null,meta:{kind:a.blob?'image':p.source_url?'link':'idea',title:p.title||''}};
  if(a.blob)await tx.objectStore('files').put(a.blob,result.file_ref);await tx.objectStore('pins').put(result);
+ }else if(a.type==='feedback.star'){
+ const board=await tx.objectStore('boards').get(p.board_id);const pin=await tx.objectStore('pins').get(p.pin_id);if(!board||board.deleted_at||!pin||pin.deleted_at||pin.board_id!==board.id)throw Error('Choose a reference in this board.');
+ const existing=(await tx.objectStore('feedback').getAll()).find(f=>!f.deleted_at&&f.board_id===board.id&&f.pin_id===pin.id&&f.created_by===b.created_by&&typeof f.starred==='boolean');
+ result=existing?{...existing,starred:!existing.starred,updated_at:b.updated_at,version:existing.version+1}:{...b,board_id:board.id,pin_id:pin.id,text:'',starred:true};await tx.objectStore('feedback').put(result);
  }else if(a.type==='feedback.add'){
- const board=await tx.objectStore('boards').get(p.board_id);if(!board||board.deleted_at||!p.text?.trim())throw Error('Add a comment to an existing board.');result={...b,board_id:p.board_id,pin_id:p.pin_id||null,text:p.text.trim()};await tx.objectStore('feedback').put(result);
+ const board=await tx.objectStore('boards').get(p.board_id);if(!board||board.deleted_at||!p.text?.trim())throw Error('Add a comment to an existing board.');if(p.pin_id){const pin=await tx.objectStore('pins').get(p.pin_id);if(!pin||pin.deleted_at||pin.board_id!==p.board_id)throw Error('Comment reference must belong to this board.');}result={...b,board_id:p.board_id,pin_id:p.pin_id||null,text:p.text.trim()};await tx.objectStore('feedback').put(result);
  }else if(a.type==='board.share'||a.type==='board.start_artwork'){throw Error('This needs your shared backend. No link has been created.');}
  else {
  const [entity,op]=a.type.split('.');if(!['board','pin'].includes(entity))throw Error('Unknown action');

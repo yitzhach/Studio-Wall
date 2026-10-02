@@ -24,3 +24,10 @@ Install on real phone, save camera/library images, close/reopen, test offline, v
 
 ## Collaboration model update (2026-10-01)
 Completed: local multi-select, atomic batch copy/move, desktop board drop targets, new-board destination, local sharing-mode and role preferences. Client share links remain deferred. User connected frontend repo to Cloudflare; verify deployment before claiming it live.
+
+## Follow-up requirements (2026-10-01)
+- Completed frontend: direct multi-selection, group drag badge, destination grid reset, zoom/carousel, print/PDF presentation, and local star/per-pin-note preview.
+- Next acceptance: physical desktop/iPhone checks, group drag, fullscreen/swipe, PDF pagination and image decoding. Browser install failed in the build environment; screenshots were not obtained.
+- Capture extension: desktop image context-menu action with source page and creator credit where available, explicit board picker, and authorized upload. Requires separate extension packaging and a defined capture contract.
+- iPhone capture: explore an Apple Shortcut exposed in Safari's Share Sheet; accept images/URLs and choose a board. Do not claim the PWA registers as an iOS share receiver. Current fallback: save images to Photos and multi-upload.
+- Sharing: a whole board or explicit subset, protected media, client stars and image-specific notes, owner favorites/review view, revocation and permissions through the shared studio backend. Current PDF is a static export; feedback remains local.

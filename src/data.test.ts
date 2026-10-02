@@ -21,3 +21,15 @@ it('copies a batch with shared blobs and intact credits; rolls back invalid batc
  const moved=await action({type:'pin.batch',payload:{ids:[p.id],board_id:copied.id,operation:'move'}});expect(moved.pins[0].version).toBe(2);
 });
 it('stores demo settings without publishing or storing a password',async()=>{const b=await action({type:'board.create',payload:{name:'Client'}});const r=await action({type:'board.share_settings',id:b.id,payload:{mode:'password',permission:'view',password:'must not store'}});expect(r.visibility).toBe('private');expect(r.share_settings).toEqual({mode:'password',permission:'view'});expect(JSON.stringify(await(await database).getAll('outbox'))).not.toContain('must not store');});
+
+it('keeps stars and image notes scoped to the board and versions toggles',async()=>{
+ const b=await action({type:'board.create',payload:{name:'Client'}}),other=await action({type:'board.create',payload:{name:'Other'}});
+ const p=await action({type:'pin.save',payload:{board_id:b.id,note:'Reference'}});
+ await expect(action({type:'feedback.star',payload:{board_id:other.id,pin_id:p.id}})).rejects.toThrow();
+ await expect(action({type:'feedback.add',payload:{board_id:other.id,pin_id:p.id,text:'Wrong board'}})).rejects.toThrow();
+ const star=await action({type:'feedback.star',payload:{board_id:b.id,pin_id:p.id}});
+ const unstar=await action({type:'feedback.star',payload:{board_id:b.id,pin_id:p.id}});
+ expect(unstar.id).toBe(star.id);expect(unstar.starred).toBe(false);expect(unstar.version).toBe(2);
+ await action({type:'feedback.add',payload:{board_id:b.id,pin_id:p.id,text:'Love this texture'}});
+ expect((await snapshot()).feedback).toHaveLength(2);
+});
