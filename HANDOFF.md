@@ -2,7 +2,16 @@
 
 Updated: 2026-10-02. Start here in a new chat; no old conversation is needed.
 
-## Latest update — compressed PDF + share-link direction (2026-10-02)
+## Latest update — history, quick notes/links, and image markup (2026-10-02)
+- Added visible **Back** and **Forward** controls for moving through Studio Wall board/app navigation, independent of the browser chrome.
+- Added **Undo** and **Redo** controls plus Cmd/Ctrl+Z and Shift+Cmd/Ctrl+Z. The current offline prototype keeps up to 30 metadata states in memory for the session and restores boards, pins, annotations and feedback. Image blobs are intentionally retained so undo/redo of image saves can restore references without re-uploading. History resets on reload.
+- Important backend transition: the in-memory history is a local UX layer only. When sync is enabled, undo/redo must become authorized inverse actions/revisions through the shared API rather than silently rewriting server state or the outbox.
+- The main **+ Add** button now opens a fast chooser: Image/photo, **Note / idea**, or **Link**. Notes and links become first-class board cards, not comments hidden inside an image. They can be searched, selected, copied/moved, exported and later shared with a client.
+- Added image **Mark up / annotate** from the reference detail view. Tools: freehand pen, circle and arrow. Each mark can carry a comment, is stored as normalized vector data on the pin, can be deleted, and overlays the image without baking pixels into the original artwork. This keeps markup editable and lightweight for the future backend.
+- Annotation backend shape is deliberately simple: pin.annotations[] with tool, normalized points and comment. Future multi-user work should add actor, timestamps, permissions and revision/conflict handling; client annotations should travel through the same authorized board-scoped action API.
+- Real mouse/touch drawing QA, visual alignment on unusual image aspect ratios, and Cloudflare deployment remain to be verified.
+
+## Previous update — compressed PDF + share-link direction (2026-10-02)
 - Present / PDF now offers **Download small PDF** as the primary attachment export. It builds a 2×2 contact-sheet layout at 1275×1650 px per page, rasterizes each page once, JPEG-compresses at 0.76 quality, and writes a minimal JPEG-only PDF locally in the browser. This avoids Safari/browser Print-to-PDF re-encoding each source image at unexpectedly large sizes.
 - The existing browser print route remains available as **Print / full-quality PDF** for cases where file size matters less.
 - Small PDF reports the generated size after download. It uses selected references when a selection exists, otherwise the visible/filtered board, matching the existing Present / PDF scope.

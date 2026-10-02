@@ -1,7 +1,7 @@
 import 'fake-indexeddb/auto';
 import {describe,it,expect,beforeEach} from 'vitest';
-import {action,database,snapshot} from './data';
-beforeEach(async()=>{const db=await database;for(const s of ['boards','pins','files','feedback','activity_log','outbox'])await db.clear(s);});
+import {action,database,snapshot,undo,redo,historyStatus,resetHistory} from './data';
+beforeEach(async()=>{resetHistory();const db=await database;for(const s of ['boards','pins','files','feedback','activity_log','outbox'])await db.clear(s);});
 describe('local action boundary',()=>{
  it('atomically persists image, pin and outbox event',async()=>{const b=await action({type:'board.create',payload:{name:'Materials'}});const p=await action({type:'pin.save',payload:{board_id:b.id,note:'Blue',palette:['#aabbcc']},blob:new Blob(['sample'],{type:'image/png'})});const db=await database;expect(p.id).toMatch(/^[0-9A-HJKMNP-TV-Z]{26}$/);expect((await db.get('files',p.file_ref)).size).toBe(6);expect(await db.count('activity_log')).toBe(2);expect(await db.count('outbox')).toBe(2);expect((await snapshot()).pins[0].studio_id).toBe('local-studio');});
  it('rejects missing board without partial writes',async()=>{await expect(action({type:'pin.save',payload:{board_id:'missing',note:'x'}})).rejects.toThrow();const db=await database;expect(await db.count('pins')).toBe(0);expect(await db.count('outbox')).toBe(0);});
@@ -33,3 +33,6 @@ it('keeps stars and image notes scoped to the board and versions toggles',async(
  await action({type:'feedback.add',payload:{board_id:b.id,pin_id:p.id,text:'Love this texture'}});
  expect((await snapshot()).feedback).toHaveLength(2);
 });
+
+it('undoes and redoes local board changes without deleting retained blobs',async()=>{const b=await action({type:'board.create',payload:{name:'Undo board'}});const p=await action({type:'pin.save',payload:{board_id:b.id,note:'Sketch note'},blob:new Blob(['image'])});expect(historyStatus().canUndo).toBe(true);await undo();expect((await snapshot()).pins).toHaveLength(0);expect(await(await database).get('files',p.file_ref)).toBeTruthy();expect(historyStatus().canRedo).toBe(true);await redo();expect((await snapshot()).pins[0].note).toBe('Sketch note');});
+it('stores vector annotations on a pin',async()=>{const b=await action({type:'board.create',payload:{name:'Markup'}});const p=await action({type:'pin.save',payload:{board_id:b.id,note:'Image'},blob:new Blob(['x'])});const annotations=[{id:'m1',tool:'circle',points:[{x:.1,y:.2},{x:.5,y:.7}],comment:'Look here'}];const updated=await action({type:'pin.update',id:p.id,payload:{annotations}});expect(updated.annotations).toEqual(annotations);});
