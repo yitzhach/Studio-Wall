@@ -2,7 +2,16 @@
 
 Updated: 2026-10-02. Start here in a new chat; no old conversation is needed.
 
-## Latest update — wider selection start area (2026-10-02)
+## Latest update — image normalization for smaller storage/sharing (2026-10-02)
+- New image uploads are normalized in the browser before local persistence: decoded source images are resized to a maximum 2400 px on the long edge and encoded as WebP at 0.82 quality. This applies to picker, camera, drag/drop and pasted image files because they all pass through the same save path.
+- JPEG, PNG and WebP are supported by normal browser decoding. HEIC/HEIF is accepted by the picker and works when the current browser/device can decode it; unsupported HEIC/HEIF fails with a clear conversion message rather than storing a giant original.
+- The local IndexedDB file blob is now the optimized WebP, so board ZIP exports and browser Print / Save PDF presentations use the smaller normalized image rather than the original upload. Existing already-saved images are not retroactively migrated.
+- Temporary ingest guard is 50 MB per source file before conversion. Stored dimensions are capped by pixels rather than an arbitrary post-conversion byte target so artwork detail remains predictable.
+- Backend transition: keep this browser optimization for responsiveness, but the shared Cloudflare/studio backend must treat it as a convenience only. On upload, server-side processing should validate/decode the source, strip metadata, enforce the same max 2400 px long edge, generate a canonical WebP (plus thumbnail variants as needed), store that canonical asset in the shared bucket/asset registry, and return the permanent file_ref. Never trust client MIME, dimensions or claimed conversion. Existing provisional local file_ref/action shapes remain the migration seam.
+- Sharing later should reference authorized canonical assets rather than attaching originals. For email/text, prefer a board link once sharing exists; when an actual attachment/export is requested, build it from the normalized/canonical derivatives.
+- Physical iPhone HEIC acceptance, visual quality, PDF-size reduction and Cloudflare rollout still need real-device QA.
+
+## Previous update — wider selection start area (2026-10-02)
 - Selection can now start in the workspace side gutters and blank space above/below the grid, rather than only the narrow image-edge padding. Increased top/bottom grid padding.
 - Image/card dragging and toolbar controls remain excluded from selection-box starts.
 - Validation: 12 tests and production build pass; test covers starting 40px outside the grid and excluding controls. Cloudflare rollout and physical browser QA remain unverified.
