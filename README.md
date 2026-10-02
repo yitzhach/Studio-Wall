@@ -22,6 +22,8 @@ Deploy `dist/` to static hosting over HTTPS. For Cloudflare Workers Static Asset
 - IndexedDB blobs and records, ULIDs, action/activity/outbox boundary.
 - Search title/note/tag/credit/palette hex, ZIP board export/import with remapped IDs.
 - Offline shell and installable manifest. Browser storage remains subject to eviction; export important boards.
+- Multi-select and atomic bulk copy/move, including a new destination board; desktop drag/drop onto boards.
+- Saved public/private/password sharing preferences are demo-only; no passwords stored.
 - Client view preview and local board comments. Real sharing is intentionally unavailable.
 
 ## Boundaries
@@ -33,3 +35,5 @@ The app saves on one browser/device. It does not sync. A URL is a bookmark, not 
 ## Sample image
 
 `public/sample-plaster.webp` was generated for this prototype; it is labeled AI-generated when added. Prompt: a standalone vertical photographic material study of weathered pale turquoise lime plaster over warm ochre/copper strata, no interface or text. The optional sample board is loaded only when selected.
+
+For a new Codex session, read AGENTS.md and docs/CODEX_START.md.

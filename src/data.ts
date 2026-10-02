@@ -1,7 +1,7 @@
 import {openDB} from 'idb';
 import {ulid} from 'ulid';
 export type Base={id:string;studio_id:string;created_at:string;updated_at:string;created_by:string;actor_type:'human'|'assistant';version:number;deleted_at:string|null};
-export type Board=Base & {name:string;description:string;cover_pin_id:string|null;visibility:'private'|'shared_link';position:number};
+export type Board=Base & {name:string;description:string;cover_pin_id:string|null;visibility:'private'|'shared_link';position:number;share_settings?:{mode:'public'|'private'|'password';permission:'view'|'comment'|'contribute'}};
 export type Pin=Base & {board_id:string;file_ref:string|null;source_url:string;source_credit:string;is_own:boolean;note:string;tags:string[];palette:string[];linked_type:string|null;linked_id:string|null;meta:{kind:'image'|'idea'|'link';title:string}};
 export type Feedback=Base & {board_id:string;pin_id:string|null;text:string};
 export type Action={type:string;id?:string;payload?:any;blob?:Blob};
@@ -14,7 +14,19 @@ export async function action(a:Action){
  const db=await database; const tx=db.transaction(['boards','pins','files','feedback','activity_log','outbox'],'readwrite');
  const b=base();let result:any;const p=a.payload||{};
  try{
- if(a.type==='board.create'){if(!p.name?.trim())throw Error('Give your board a name.');result={...b,name:p.name.trim(),description:p.description||'',cover_pin_id:null,visibility:'private',position:(await tx.objectStore('boards').getAll()).length};await tx.objectStore('boards').put(result);}
+ if(a.type==='pin.batch'){
+ if(!['copy','move'].includes(p.operation)||!Array.isArray(p.ids)||!p.ids.length)throw Error('Select references and choose copy or move.');
+ let dest=await tx.objectStore('boards').get(p.board_id||'');
+ if(p.new_board_name?.trim()){dest={...base(),name:p.new_board_name.trim(),description:'',cover_pin_id:null,visibility:'private',position:(await tx.objectStore('boards').getAll()).length};await tx.objectStore('boards').put(dest);}
+ if(!dest||dest.deleted_at)throw Error('Choose an existing board.');
+ const records=[];
+ for(const id of [...new Set(p.ids)]){const pin=await tx.objectStore('pins').get(id as string);if(!pin||pin.deleted_at)throw Error('A selected reference is no longer available.');
+ const next=p.operation==='copy'?{...pin,...base(),board_id:dest.id}:{...pin,board_id:dest.id,updated_at:b.updated_at,version:pin.version+1};await tx.objectStore('pins').put(next);records.push(next);}
+ result={id:dest.id,board:dest,pins:records};
+ }else if(a.type==='board.share_settings'){
+ if(!['public','private','password'].includes(p.mode)||!['view','comment','contribute'].includes(p.permission))throw Error('Choose valid sharing settings.');
+ result=await tx.objectStore('boards').get(a.id!);if(!result||result.deleted_at)throw Error('Board not found.');result={...result,share_settings:{mode:p.mode,permission:p.permission},updated_at:b.updated_at,version:result.version+1};await tx.objectStore('boards').put(result);
+ }else if(a.type==='board.create'){if(!p.name?.trim())throw Error('Give your board a name.');result={...b,name:p.name.trim(),description:p.description||'',cover_pin_id:null,visibility:'private',position:(await tx.objectStore('boards').getAll()).length};await tx.objectStore('boards').put(result);}
  else if(a.type==='pin.save'){
  const board=await tx.objectStore('boards').get(p.board_id);if(!board||board.deleted_at)throw Error('Choose an existing board.');
  if(!a.blob&&!p.source_url&&!p.note?.trim())throw Error('Add an image, link or idea.');

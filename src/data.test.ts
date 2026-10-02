@@ -10,3 +10,14 @@ describe('local action boundary',()=>{
  it('keeps sharing unavailable until an authorized backend exists',async()=>{await expect(action({type:'board.share'})).rejects.toThrow('backend');expect(await(await database).count('outbox')).toBe(0);});
  it('rejects a cover from a different board',async()=>{const b=await action({type:'board.create',payload:{name:'One'}});const c=await action({type:'board.create',payload:{name:'Two'}});const p=await action({type:'pin.save',payload:{board_id:c.id,note:'test'}});await expect(action({type:'board.update',id:b.id,payload:{cover_pin_id:p.id}})).rejects.toThrow();});
 });
+
+it('copies a batch with shared blobs and intact credits; rolls back invalid batches',async()=>{
+ const b=await action({type:'board.create',payload:{name:'Source'}});
+ const p=await action({type:'pin.save',payload:{board_id:b.id,note:'hello',source_credit:'Artist',source_url:'https://example.com'},blob:new Blob(['x'])});
+ const copied=await action({type:'pin.batch',payload:{ids:[p.id],new_board_name:'Client',operation:'copy'}});
+ expect(copied.pins[0].id).not.toBe(p.id);expect(copied.pins[0].file_ref).toBe(p.file_ref);expect(copied.pins[0].source_credit).toBe('Artist');expect((await snapshot()).pins).toHaveLength(2);
+ await expect(action({type:'pin.batch',payload:{ids:[p.id,'missing'],new_board_name:'Rollback',operation:'move'}})).rejects.toThrow();
+ expect((await snapshot()).boards.some(b=>b.name==='Rollback')).toBe(false);expect((await snapshot()).pins.find(x=>x.id===p.id)?.board_id).toBe(b.id);
+ const moved=await action({type:'pin.batch',payload:{ids:[p.id],board_id:copied.id,operation:'move'}});expect(moved.pins[0].version).toBe(2);
+});
+it('stores demo settings without publishing or storing a password',async()=>{const b=await action({type:'board.create',payload:{name:'Client'}});const r=await action({type:'board.share_settings',id:b.id,payload:{mode:'password',permission:'view',password:'must not store'}});expect(r.visibility).toBe('private');expect(r.share_settings).toEqual({mode:'password',permission:'view'});expect(JSON.stringify(await(await database).getAll('outbox'))).not.toContain('must not store');});

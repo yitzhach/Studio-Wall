@@ -21,3 +21,6 @@ Asset records/file_ref point to shared media service, not direct public bucket p
 
 ## Device acceptance
 Install on real phone, save camera/library images, close/reopen, test offline, verify palettes/credits. Web Share Target receiving must be verified per browser; do not promise iPhone share-sheet support. ZIP restore must remap IDs. Multi-device collaboration awaits backend.
+
+## Collaboration model update (2026-10-01)
+Completed: local multi-select, atomic batch copy/move, desktop board drop targets, new-board destination, local sharing-mode and role preferences. Client share links remain deferred. User connected frontend repo to Cloudflare; verify deployment before claiming it live.
