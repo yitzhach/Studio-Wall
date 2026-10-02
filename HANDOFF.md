@@ -2,7 +2,16 @@
 
 Updated: 2026-10-02. Start here in a new chat; no old conversation is needed.
 
-## Latest update — image normalization for smaller storage/sharing (2026-10-02)
+## Latest update — compressed PDF + share-link direction (2026-10-02)
+- Present / PDF now offers **Download small PDF** as the primary attachment export. It builds a 2×2 contact-sheet layout at 1275×1650 px per page, rasterizes each page once, JPEG-compresses at 0.76 quality, and writes a minimal JPEG-only PDF locally in the browser. This avoids Safari/browser Print-to-PDF re-encoding each source image at unexpectedly large sizes.
+- The existing browser print route remains available as **Print / full-quality PDF** for cases where file size matters less.
+- Small PDF reports the generated size after download. It uses selected references when a selection exists, otherwise the visible/filtered board, matching the existing Present / PDF scope.
+- No external PDF dependency was added; the writer is local/offline and has a unit test for PDF structure. Real visual/file-size QA on iPhone and desktop is still required.
+- **Primary future client sharing remains a live board URL, not a PDF.** When the shared backend is connected, Collaborate should create a revocable board-scoped URL that can be copied into Messages/email. The board route must return server-rendered Open Graph/Twitter metadata (title, short description, canonical URL, and an authorized/public preview image) so iMessage/email/social clients can show a rich link card/thumbnail.
+- Link-preview image should default to the board cover pin, with a generated board collage fallback. Because link-preview crawlers cannot use the signed-in SPA session, public/password/private modes need an explicit preview policy: public may expose the chosen preview derivative; private should use a generic Studio Wall card unless the product deliberately creates a safe non-sensitive preview endpoint. Never leak private board media merely to make a thumbnail.
+- Cloudflare backend target: canonical optimized assets in the shared bucket/registry; a share record maps a random/revocable token to board + role + expiry; a server/Worker board route renders OG metadata and then loads the client board UI. PDF attachment generation can continue client-side from authorized derivatives.
+
+## Previous update — image normalization for smaller storage/sharing (2026-10-02)
 - New image uploads are normalized in the browser before local persistence: decoded source images are resized to a maximum 2400 px on the long edge and encoded as WebP at 0.82 quality. This applies to picker, camera, drag/drop and pasted image files because they all pass through the same save path.
 - JPEG, PNG and WebP are supported by normal browser decoding. HEIC/HEIF is accepted by the picker and works when the current browser/device can decode it; unsupported HEIC/HEIF fails with a clear conversion message rather than storing a giant original.
 - The local IndexedDB file blob is now the optimized WebP, so board ZIP exports and browser Print / Save PDF presentations use the smaller normalized image rather than the original upload. Existing already-saved images are not retroactively migrated.
