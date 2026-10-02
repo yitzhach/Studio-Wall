@@ -22,7 +22,7 @@ Deploy `dist/` to static hosting over HTTPS. For Cloudflare Workers Static Asset
 - IndexedDB blobs and records, ULIDs, action/activity/outbox boundary.
 - Search title/note/tag/credit/palette hex, ZIP board export/import with remapped IDs.
 - Offline shell and installable manifest. Browser storage remains subject to eviction; export important boards.
-- Direct selection circles, Cmd/Ctrl-click toggles, Shift-click ranges and atomic bulk copy/move; desktop group drag/drop onto boards.
+- Mouse selection boxes from grid whitespace, optional Select-mode circles, Cmd/Ctrl-click toggles, Shift-click ranges and atomic bulk copy/move; desktop group drag/drop onto boards.
 - Detail zoom and a dark full-window image carousel with arrow navigation, touch swipe and optional native fullscreen.
 - Present / PDF for the visible collection or selected references; print/save PDF and attach it to email. Image notes are excluded; text references and credits are included.
 - Local preview of client stars and per-image notes, plus a Starred filter. No cross-device feedback yet.

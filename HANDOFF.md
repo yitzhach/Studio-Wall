@@ -2,7 +2,14 @@
 
 Updated: 2026-10-01. Start here in a new chat; no old conversation is needed.
 
-## Latest update — selection, viewer and client presentation
+## Latest update — mouse selection (2026-10-01)
+- Restored clean cards by default: selection circles appear only after choosing Select. Cmd/Ctrl-click and Shift-click remain available.
+- Left-click and drag from whitespace around/between references to draw a rectangular selection box. Intersecting cards highlight live; drag any highlighted card onto a board to copy/move the selected group.
+- Shift/Cmd/Ctrl while starting a box preserves the previous selection. Escape or pointer cancellation restores it. Clicking blank grid space clears it. Card drags and touch scrolling keep their previous behavior; touch selection uses Select.
+- Added grid-edge whitespace so a selection can start outside the first/last image. No freehand lasso or edge auto-scroll is implemented.
+- Validation: 12 tests pass and production build passes; physical browser/device QA remains pending.
+
+## Previous update — selection, viewer and client presentation
 - User confirmed the Cloudflare frontend is live. Backend integration is still pending. This update has not been independently verified on Cloudflare.
 - Direct selection circles on every reference, Cmd/Ctrl-click toggles and Shift-click ranges; drag any selected reference to move/copy the group. Drag badge shows the count. Touch users can tap circles and use Copy / move.
 - Opening a board, completing a transfer, or saving references opens its image/reference grid with search/filter reset; board navigation clears selection mode.

@@ -36,6 +36,7 @@ it('creates a board, saves and edits an idea, searches, and previews feedback',a
  (document.querySelector('#pin-comment textarea') as HTMLTextAreaElement).value='A client favorite';document.querySelector('#pin-comment')!.dispatchEvent(new Event('submit',{bubbles:true,cancelable:true}));
  await vi.waitFor(()=>expect(document.querySelector('.pin-feedback article')?.textContent).toContain('client favorite'));
  click('#modal .close');click('[data-nav="all"]');
+ expect(document.querySelectorAll('[data-select-pin]')).toHaveLength(0);
  const cards=Array.from(document.querySelectorAll<HTMLElement>('[data-pin]'));
  cards[0].dispatchEvent(new MouseEvent('click',{bubbles:true,ctrlKey:true}));
  document.querySelectorAll<HTMLElement>('[data-pin]')[1].dispatchEvent(new MouseEvent('click',{bubbles:true,shiftKey:true}));
