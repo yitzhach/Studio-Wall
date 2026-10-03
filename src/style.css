@@ -26,3 +26,5 @@
 .quick-board-save select{max-width:160px;min-width:80px}.quick-board-save .primary{white-space:nowrap;padding:8px 12px}.focus-toolbar{flex-wrap:wrap}
 
 .page-foot{flex-wrap:wrap;gap:12px}.page-foot .build-stamp{flex-basis:100%;font-size:11px;line-height:1.6}.build-stamp strong{font-weight:600}.annotated-image img{cursor:zoom-in}
+
+.can-pan,.can-pan img{cursor:grab!important;user-select:none;-webkit-user-select:none}.can-pan img{-webkit-user-drag:none}.is-panning,.is-panning img{cursor:grabbing!important}

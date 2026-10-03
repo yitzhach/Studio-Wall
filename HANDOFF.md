@@ -2,7 +2,12 @@
 
 Updated: 2026-10-02. Start here in a new chat; no old conversation is needed.
 
-## Latest update — build stamp and double-click expand (2026-10-03)
+## Latest update — mouse drag to pan (2026-10-03)
+- Zoomed images support left-click, hold and drag to pan horizontally or vertically in both detail view and expanded gallery. Grab/grabbing cursors indicate the interaction.
+- Shared pointer handler captures the mouse for dragging beyond image bounds and releases on pointer up/cancel/lost capture or returning to Fit. Native image dragging is suppressed while zoomed; touch scrolling/swipe behavior remains unchanged.
+- Validation: 18 tests and production build pass. Tests exercise scroll deltas, capture cleanup, Fit state and ignoring touch/right-click. Physical mouse/mobile QA remains pending.
+
+## Previous update — build stamp and double-click expand (2026-10-03)
 - Footer now shows `vYYYY.MM.DD-HHmm` (UTC) and a human-readable build timestamp in America/New_York, labeled ET. Vite injects the timestamp once per build; reloading does not change it.
 - Double-clicking the image in detail view opens the same expanded gallery as Expand gallery, starting with the current image. The handler includes the annotation wrapper.
 - Validation: production build and existing 16-test suite pass. Physical mouse/iPhone QA and Cloudflare rollout verification remain pending.
