@@ -7,6 +7,10 @@ it('navigates the image carousel, resets zoom between images and scopes presenta
  HTMLDialogElement.prototype.showModal=function(){this.open=true;};HTMLDialogElement.prototype.close=function(){this.open=false;this.dispatchEvent(new Event('close'));};
  openGallery(pins,()=>'/sample-plaster.webp','a');
  const d=document.querySelector<HTMLDialogElement>('.gallery')!;
+ const galleryImage=d.querySelector<HTMLImageElement>('.gallery-stage img')!;galleryImage.click();expect(d.querySelector('[data-g=fit]')!.textContent).toContain('200');
+ galleryImage.click();expect(d.querySelector('[data-g=fit]')!.textContent).toContain('200');
+ expect(d.querySelector('.gallery-stage')!.classList.contains('can-pan')).toBe(true);
+ d.querySelector<HTMLButtonElement>('[data-g=fit]')!.click();expect(galleryImage.title).toBe('Click to zoom in');
  d.querySelector<HTMLButtonElement>('[data-g=in]')!.click();expect(d.querySelector('[data-g=fit]')!.textContent).toContain('125');
  d.dispatchEvent(new KeyboardEvent('keydown',{key:'ArrowRight',bubbles:true}));expect(d.querySelector('.gallery-title')!.textContent).toBe('Second');expect(d.querySelector('[data-g=fit]')!.textContent).toBe('Fit');
  d.dispatchEvent(new KeyboardEvent('keydown',{key:'ArrowRight',bubbles:true}));expect(d.querySelector('.gallery-title')!.textContent).toBe('First');d.close();expect(document.querySelector('.gallery')).toBeNull();

@@ -2,7 +2,12 @@
 
 Updated: 2026-10-02. Start here in a new chat; no old conversation is needed.
 
-## Latest update — mouse drag to pan (2026-10-03)
+## Latest update — single-click expanded image zoom (2026-10-03)
+- Expanded gallery now shows the zoom-in magnifying-glass cursor at Fit. One click zooms to 200%; double-click is no longer required. Once zoomed, the grab cursor and drag-to-pan remain active; clicking or releasing a drag does not unexpectedly zoom back out. Fit / minus controls zoom out.
+- Detail-view double-click to expand remains unchanged.
+- Validation: all 18 tests and production build pass; gallery test covers single-click zoom and subsequent-click stability. Physical browser QA and Cloudflare rollout remain unverified.
+
+## Previous update — mouse drag to pan (2026-10-03)
 - Zoomed images support left-click, hold and drag to pan horizontally or vertically in both detail view and expanded gallery. Grab/grabbing cursors indicate the interaction.
 - Shared pointer handler captures the mouse for dragging beyond image bounds and releases on pointer up/cancel/lost capture or returning to Fit. Native image dragging is suppressed while zoomed; touch scrolling/swipe behavior remains unchanged.
 - Validation: 18 tests and production build pass. Tests exercise scroll deltas, capture cleanup, Fit state and ignoring touch/right-click. Physical mouse/mobile QA remains pending.

@@ -9,14 +9,14 @@ export function openGallery(pins:Pin[], image:(p:Pin)=>string|null|undefined, st
  d.innerHTML='<div class="gallery-bar"><span class="gallery-title"></span><button data-g="out" aria-label="Zoom out">−</button><button data-g="fit">Fit</button><button data-g="in" aria-label="Zoom in">+</button><button data-g="screen">Fullscreen</button><button data-g="close" aria-label="Close gallery">✕</button></div><div class="gallery-stage"><img draggable="false" alt=""></div><div class="gallery-nav"><button data-g="prev" aria-label="Previous image">← Previous</button><span aria-live="polite"></span><button data-g="next" aria-label="Next image">Next →</button></div>';
  document.body.append(d);const stage=d.querySelector<HTMLElement>('.gallery-stage')!,img=d.querySelector<HTMLImageElement>('img')!;
  const pan=bindImagePan(stage,()=>zoom>1);
- const sizing=()=>{pan.update();img.style.width=zoom===1?'100%':`${stage.clientWidth*zoom}px`;img.style.height=zoom===1?'100%':`${stage.clientHeight*zoom}px`;d.querySelector('[data-g=fit]')!.textContent=zoom===1?'Fit':`${Math.round(zoom*100)}% · Fit`;};
+ const sizing=()=>{pan.update();img.title=zoom===1?'Click to zoom in':'Drag to pan · Fit to zoom out';img.style.width=zoom===1?'100%':`${stage.clientWidth*zoom}px`;img.style.height=zoom===1?'100%':`${stage.clientHeight*zoom}px`;d.querySelector('[data-g=fit]')!.textContent=zoom===1?'Fit':`${Math.round(zoom*100)}% · Fit`;};
  const draw=()=>{const p=items[index];img.src=image(p)!;img.alt=p.meta.title||'Saved reference';d.querySelector('.gallery-title')!.textContent=p.meta.title||'Untitled reference';d.querySelector('.gallery-nav span')!.textContent=`${index+1} / ${items.length}`;zoom=1;sizing();stage.scrollTo?.(0,0);};
  const step=(n:number)=>{index=(index+n+items.length)%items.length;draw();};
  const scale=(n:number)=>{zoom=Math.min(4,Math.max(1,zoom+n));sizing();};
  d.querySelectorAll<HTMLButtonElement>('[data-g]').forEach(b=>b.onclick=()=>{switch(b.dataset.g){case 'close':d.close();break;case 'prev':step(-1);break;case 'next':step(1);break;case 'in':scale(.25);break;case 'out':scale(-.25);break;case 'fit':zoom=1;sizing();break;case 'screen':if(document.fullscreenElement===d)void document.exitFullscreen();else void d.requestFullscreen?.().catch(()=>{});}});
  if(!d.requestFullscreen)d.querySelector('[data-g=screen]')!.remove();
  d.onkeydown=e=>{if(['ArrowLeft','ArrowRight','+','=','-','0'].includes(e.key)){e.preventDefault();e.stopPropagation();if(e.key==='ArrowLeft')step(-1);if(e.key==='ArrowRight')step(1);if(e.key==='+'||e.key==='=')scale(.25);if(e.key==='-')scale(-.25);if(e.key==='0'){zoom=1;sizing();}}};
- img.ondblclick=()=>{zoom=zoom===1?2:1;sizing();};
+ img.onclick=()=>{if(zoom===1){zoom=2;sizing();}};
  let touchX=0,touchY=0;stage.addEventListener('touchstart',e=>{if(e.touches.length===1){touchX=e.touches[0].clientX;touchY=e.touches[0].clientY;}},{passive:true});stage.addEventListener('touchend',e=>{const t=e.changedTouches[0];if(zoom===1&&t&&Math.abs(t.clientX-touchX)>70&&Math.abs(t.clientY-touchY)<60)step(t.clientX<touchX?1:-1);},{passive:true});
  const resize=()=>sizing();window.addEventListener('resize',resize);d.addEventListener('close',()=>{window.removeEventListener('resize',resize);pan.end();d.remove();},{once:true});d.showModal();draw();
 }
