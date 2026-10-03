@@ -13,7 +13,7 @@ it('creates a board, saves and edits an idea, searches, and previews feedback',a
  (document.querySelector('[name=name]') as HTMLInputElement).value='Client study';
  document.querySelector('dialog form')!.dispatchEvent(new Event('submit',{bubbles:true,cancelable:true}));
  await vi.waitFor(()=>expect(document.querySelector('h1')?.textContent).toContain('Client study'));
- click('[data-action="save"]');(document.querySelector('[name=title]') as HTMLInputElement).value='Warm texture';(document.querySelector('[name=note]') as HTMLTextAreaElement).value='A pale plaster study';
+ click('[data-action="save"]');click('[data-kind="idea"]');(document.querySelector('[name=title]') as HTMLInputElement).value='Warm texture';(document.querySelector('[name=note]') as HTMLTextAreaElement).value='A pale plaster study';
  document.querySelector('#save-form')!.dispatchEvent(new Event('submit',{bubbles:true,cancelable:true}));
  await vi.waitFor(()=>expect(document.querySelector('[data-pin]')?.textContent).toContain('Warm texture'));
  click('[data-pin]');(document.querySelector('[name=note]') as HTMLTextAreaElement).value='A revised direction';
@@ -31,11 +31,19 @@ it('creates a board, saves and edits an idea, searches, and previews feedback',a
  click('[data-action="share"]');(document.querySelector('[name=mode]') as HTMLSelectElement).value='password';
  document.querySelector('#share-settings')!.dispatchEvent(new Event('submit',{bubbles:true,cancelable:true}));
  await vi.waitFor(async()=>expect((await snapshot()).boards.find(b=>b.name==='Client copies')?.share_settings?.mode).toBe('password'));
+ await vi.waitFor(()=>expect(document.querySelector<HTMLDialogElement>('#modal')?.open).toBe(false));
  expect((await snapshot()).boards.find(b=>b.name==='Client copies')?.visibility).toBe('private');
  click('[data-pin]');click('#star-pin');await vi.waitFor(()=>expect(document.querySelector('#star-pin')?.getAttribute('aria-pressed')).toBe('true'));
  (document.querySelector('#pin-comment textarea') as HTMLTextAreaElement).value='A client favorite';document.querySelector('#pin-comment')!.dispatchEvent(new Event('submit',{bubbles:true,cancelable:true}));
  await vi.waitFor(()=>expect(document.querySelector('.pin-feedback article')?.textContent).toContain('client favorite'));
  click('#modal .close');click('[data-nav="all"]');
+ click('[data-pin]');
+ expect(document.querySelector('#prev-pin')?.hasAttribute('disabled')).toBe(true);
+ click('#next-pin');expect(document.querySelector('.focus-toolbar')?.textContent).toContain('2 / 2');
+ click('#prev-pin');expect(document.querySelector('.focus-toolbar')?.textContent).toContain('1 / 2');
+ expect(document.querySelector('.inspector')!.innerHTML.indexOf('pin-feedback')).toBeLessThan(document.querySelector('.inspector')!.innerHTML.indexOf('edit-form'));
+ click('#back-board');
+
  expect(document.querySelectorAll('[data-select-pin]')).toHaveLength(0);
  const cards=Array.from(document.querySelectorAll<HTMLElement>('[data-pin]'));
  cards[0].dispatchEvent(new MouseEvent('click',{bubbles:true,ctrlKey:true}));
@@ -44,5 +52,12 @@ it('creates a board, saves and edits an idea, searches, and previews feedback',a
  click('[data-action="present"]');expect(document.querySelectorAll('.presentation figure')).toHaveLength(2);document.querySelector<HTMLDialogElement>('.presentation')!.close();
  click('[data-filter="starred"]');expect(document.querySelectorAll('[data-pin]')).toHaveLength(1);
  const original=(await snapshot()).boards.find(b=>b.name==='Client study')!;click(`[data-nav="${original.id}"]`);expect(document.querySelectorAll('[data-pin]')).toHaveLength(1);expect(document.querySelector('[data-filter="all"]')?.classList.contains('chosen')).toBe(true);
+ click('[data-action="share"]');
+ (document.querySelector('[name=comments_enabled]') as HTMLInputElement).checked=false;
+ click('#client-preview');await vi.waitFor(()=>expect(document.querySelector('.preview-banner')).toBeTruthy());
+ expect(document.querySelector('#feedback-form')?.hasAttribute('hidden')).toBe(true);
+ click('[data-pin]');expect(document.querySelector('#pin-comment')?.hasAttribute('hidden')).toBe(true);
+ expect(document.querySelector('#quick-save-pin')).toBeNull();
+ click('#back-board');click('[data-action="exit-preview"]');
  const search=document.querySelector<HTMLInputElement>('#search')!;search.value='nonexistent';search.dispatchEvent(new Event('input'));expect(document.querySelectorAll('[data-pin]')).toHaveLength(0);
 });

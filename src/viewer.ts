@@ -34,7 +34,7 @@ export function buildPdf(pages:{bytes:Uint8Array;width:number;height:number}[]):
   const command=`q 612 0 0 792 0 0 cm /Im${pageId} Do Q`;add(`<< /Length ${command.length} >>\\nstream\\n${command}\\nendstream`);
  }
  objects[1]=enc.encode(`<< /Type /Pages /Kids [${kids.map(id=>id+' 0 R').join(' ')}] /Count ${kids.length} >>`);
- const header=enc.encode('%PDF-1.4\\n%StudioWall\\n'),parts=[header],offsets=[0];let offset=header.length;
+ const header=enc.encode('%PDF-1.4\\n%StudioWall\\n'),parts:Uint8Array[]=[header],offsets=[0];let offset=header.length;
  objects.forEach((body,i)=>{offsets[i+1]=offset;const pre=enc.encode(`${i+1} 0 obj\\n`),post=enc.encode('\\nendobj\\n');parts.push(pre,body,post);offset+=pre.length+body.length+post.length;});
  const xref=offset;let table=`xref\\n0 ${objects.length+1}\\n0000000000 65535 f \\n`;for(let i=1;i<=objects.length;i++)table+=String(offsets[i]).padStart(10,'0')+' 00000 n \\n';
  parts.push(enc.encode(table+`trailer\\n<< /Size ${objects.length+1} /Root 1 0 R >>\\nstartxref\\n${xref}\\n%%EOF`));return new Blob(parts as BlobPart[],{type:'application/pdf'});

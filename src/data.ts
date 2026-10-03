@@ -1,7 +1,7 @@
 import {openDB} from 'idb';
 import {ulid} from 'ulid';
 export type Base={id:string;studio_id:string;created_at:string;updated_at:string;created_by:string;actor_type:'human'|'assistant';version:number;deleted_at:string|null};
-export type Board=Base & {name:string;description:string;cover_pin_id:string|null;visibility:'private'|'shared_link';position:number;share_settings?:{mode:'public'|'private'|'password';permission:'view'|'comment'|'contribute'}};
+export type Board=Base & {name:string;description:string;cover_pin_id:string|null;visibility:'private'|'shared_link';position:number;comments_enabled?:boolean;share_settings?:{mode:'public'|'private'|'password';permission:'view'|'comment'|'contribute'}};
 export type Annotation={id:string;tool:'pen'|'circle'|'arrow';points:{x:number;y:number}[];comment:string};
 export type Pin=Base & {board_id:string;file_ref:string|null;source_url:string;source_credit:string;is_own:boolean;note:string;tags:string[];palette:string[];linked_type:string|null;linked_id:string|null;annotations?:Annotation[];meta:{kind:'image'|'idea'|'link';title:string}};
 export type Feedback=Base & {board_id:string;pin_id:string|null;text:string;starred?:boolean};
@@ -48,7 +48,7 @@ export async function action(a:Action){
  const existing=(await tx.objectStore('feedback').getAll()).find(f=>!f.deleted_at&&f.board_id===board.id&&f.pin_id===pin.id&&f.created_by===b.created_by&&typeof f.starred==='boolean');
  result=existing?{...existing,starred:!existing.starred,updated_at:b.updated_at,version:existing.version+1}:{...b,board_id:board.id,pin_id:pin.id,text:'',starred:true};await tx.objectStore('feedback').put(result);
  }else if(a.type==='feedback.add'){
- const board=await tx.objectStore('boards').get(p.board_id);if(!board||board.deleted_at||!p.text?.trim())throw Error('Add a comment to an existing board.');if(p.pin_id){const pin=await tx.objectStore('pins').get(p.pin_id);if(!pin||pin.deleted_at||pin.board_id!==p.board_id)throw Error('Comment reference must belong to this board.');}result={...b,board_id:p.board_id,pin_id:p.pin_id||null,text:p.text.trim()};await tx.objectStore('feedback').put(result);
+ const board=await tx.objectStore('boards').get(p.board_id);if(!board||board.deleted_at||!p.text?.trim())throw Error('Add a comment to an existing board.');if(p.client_preview&&(board.comments_enabled===false||board.share_settings?.permission==='view'))throw Error('Comments are turned off for this board.');if(p.text.trim().length>4000)throw Error('Keep comments under 4,000 characters.');if(p.pin_id){const pin=await tx.objectStore('pins').get(p.pin_id);if(!pin||pin.deleted_at||pin.board_id!==p.board_id)throw Error('Comment reference must belong to this board.');}result={...b,board_id:p.board_id,pin_id:p.pin_id||null,text:p.text.trim()};await tx.objectStore('feedback').put(result);
  }else if(a.type==='board.share'||a.type==='board.start_artwork'){throw Error('This needs your shared backend. No link has been created.');}
  else {
  const [entity,op]=a.type.split('.');if(!['board','pin'].includes(entity))throw Error('Unknown action');
@@ -59,6 +59,7 @@ export async function action(a:Action){
  }else if(entity==='board'&&op==='update'){
  if(p.name!==undefined){if(!p.name.trim())throw Error('Give your board a name.');result.name=p.name.trim();}
  if(p.description!==undefined)result.description=p.description;
+ if(p.comments_enabled!==undefined){if(typeof p.comments_enabled!=='boolean')throw Error('Choose whether comments are enabled.');result.comments_enabled=p.comments_enabled;}
  if(p.position!==undefined)result.position=p.position;
  if(p.cover_pin_id!==undefined){const pin=await tx.objectStore('pins').get(p.cover_pin_id);if(!pin||pin.board_id!==result.id||pin.deleted_at)throw Error('Cover must belong to this board.');result.cover_pin_id=p.cover_pin_id;}
  }else if(entity==='pin'&&['update','move','link'].includes(op)){

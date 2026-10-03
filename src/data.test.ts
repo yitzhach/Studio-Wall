@@ -36,3 +36,17 @@ it('keeps stars and image notes scoped to the board and versions toggles',async(
 
 it('undoes and redoes local board changes without deleting retained blobs',async()=>{const b=await action({type:'board.create',payload:{name:'Undo board'}});const p=await action({type:'pin.save',payload:{board_id:b.id,note:'Sketch note'},blob:new Blob(['image'])});expect(historyStatus().canUndo).toBe(true);await undo();expect((await snapshot()).pins).toHaveLength(0);expect(await(await database).get('files',p.file_ref)).toBeTruthy();expect(historyStatus().canRedo).toBe(true);await redo();expect((await snapshot()).pins[0].note).toBe('Sketch note');});
 it('stores vector annotations on a pin',async()=>{const b=await action({type:'board.create',payload:{name:'Markup'}});const p=await action({type:'pin.save',payload:{board_id:b.id,note:'Image'},blob:new Blob(['x'])});const annotations=[{id:'m1',tool:'circle',points:[{x:.1,y:.2},{x:.5,y:.7}],comment:'Look here'}];const updated=await action({type:'pin.update',id:p.id,payload:{annotations}});expect(updated.annotations).toEqual(annotations);});
+
+it('keeps existing feedback when comments are disabled and rejects preview writes',async()=>{
+ const b=await action({type:'board.create',payload:{name:'Client review'}});
+ await action({type:'feedback.add',payload:{board_id:b.id,text:'Keep this direction',client_preview:true}});
+ await action({type:'board.update',id:b.id,payload:{comments_enabled:false}});
+ await expect(action({type:'feedback.add',payload:{board_id:b.id,text:'Blocked',client_preview:true}})).rejects.toThrow('turned off');
+ expect((await snapshot()).feedback).toHaveLength(1);
+ await action({type:'board.update',id:b.id,payload:{comments_enabled:true}});
+ await action({type:'board.share_settings',id:b.id,payload:{mode:'public',permission:'view'}});
+ await expect(action({type:'feedback.add',payload:{board_id:b.id,text:'Still blocked',client_preview:true}})).rejects.toThrow('turned off');
+ await action({type:'board.share_settings',id:b.id,payload:{mode:'public',permission:'comment'}});
+ await action({type:'feedback.add',payload:{board_id:b.id,text:'Now allowed',client_preview:true}});
+ expect((await snapshot()).feedback).toHaveLength(2);
+});

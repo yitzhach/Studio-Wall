@@ -2,7 +2,21 @@
 
 Updated: 2026-10-02. Start here in a new chat; no old conversation is needed.
 
-## Latest update — history, quick notes/links, and image markup (2026-10-02)
+## Latest update — build stamp and double-click expand (2026-10-03)
+- Footer now shows `vYYYY.MM.DD-HHmm` (UTC) and a human-readable build timestamp in America/New_York, labeled ET. Vite injects the timestamp once per build; reloading does not change it.
+- Double-clicking the image in detail view opens the same expanded gallery as Expand gallery, starting with the current image. The handler includes the annotation wrapper.
+- Validation: production build and existing 16-test suite pass. Physical mouse/iPhone QA and Cloudflare rollout verification remain pending.
+
+## Previous update — Pinterest-style image navigation and comments (2026-10-03)
+- Image detail toolbar: Back to board, Previous/Next with position indicator and arrow-key navigation, Comments shortcut, and owner-only board picker + Save a copy. Copies preserve credits and file references. Previous/Next asks before discarding edits.
+- Image comments now appear above metadata editing, with a clear Post comment form. Cards show image comment counts. Board conversation is visible to the owner as well as in client preview.
+- Collaborate includes an explicit Allow client comments checkbox (`Board.comments_enabled`). Existing boards retain their prior behavior. Turning off comments preserves history; view-only role always blocks client comments. Local preview comment actions check this setting and board/pin membership, and limit comments to 4,000 characters.
+- These remain LOCAL PREVIEW features. No server, guest identity, live share URL, or cross-device comment delivery exists. `client_preview` is a UI/demo flag, not authorization. The shared API must derive identity and enforce board permissions server-side for all writes.
+- Projects are not a separate entity in this repository. Project-wide comment policy and inherited per-board overrides remain for the shared backend integration; do not imply they have shipped.
+- Validation: all 16 tests pass, including comment-off/view-only rejection and preservation, detail navigation and preview visibility. Production build passes. Fixed an existing typed-array inference build error in the PDF writer and updated the UI test for the existing Add chooser. No real-browser/mobile visual QA or Cloudflare deployment confirmation in this session.
+- Next task: connect the agreed studio identity + board-sharing API, then wire this same comment experience to shared boards/projects. Confirm backend ownership/contract before building parallel infrastructure.
+
+## Previous update — history, quick notes/links, and image markup (2026-10-02)
 - Added visible **Back** and **Forward** controls for moving through Studio Wall board/app navigation, independent of the browser chrome.
 - Added **Undo** and **Redo** controls plus Cmd/Ctrl+Z and Shift+Cmd/Ctrl+Z. The current offline prototype keeps up to 30 metadata states in memory for the session and restores boards, pins, annotations and feedback. Image blobs are intentionally retained so undo/redo of image saves can restore references without re-uploading. History resets on reload.
 - Important backend transition: the in-memory history is a local UX layer only. When sync is enabled, undo/redo must become authorized inverse actions/revisions through the shared API rather than silently rewriting server state or the outbox.
