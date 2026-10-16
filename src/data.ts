@@ -7,6 +7,8 @@ export type Pin=Base & {board_id:string;file_ref:string|null;source_url:string;s
 export type Feedback=Base & {board_id:string;pin_id:string|null;text:string;starred?:boolean};
 export type Action={type:string;id?:string;payload?:any;blob?:Blob;blobs?:Record<string,Blob>;recordHistory?:boolean};
 export const STUDIO='local-studio';
+// Fires after every committed local write so sync can push it; sync's own merges are marked fromSync.
+export const changes=new EventTarget();
 export const database=openDB('studio-wall-v1',1,{upgrade(db){for(const store of ['boards','pins','feedback','activity_log','outbox'])db.createObjectStore(store,{keyPath:'id'});db.createObjectStore('files');}});
 const base=():Base=>{const now=new Date().toISOString();return {id:ulid(),studio_id:STUDIO,created_at:now,updated_at:now,created_by:'local-owner',actor_type:'human',version:1,deleted_at:null};};
 type HistoryState={boards:any[];pins:any[];feedback:any[]};
@@ -86,7 +88,7 @@ export async function action(a:Action){
  }else throw Error('Unknown action');
  result.updated_at=b.updated_at;result.version++;await store.put(result);
  }
- const event={...base(),action:a.type,record_id:result.id,record:result};await tx.objectStore('activity_log').put(event);await tx.objectStore('outbox').put({...event,status:'pending',attempts:0});await tx.done;if(before)remember(before);return result;
+ const event={...base(),action:a.type,record_id:result.id,record:result};await tx.objectStore('activity_log').put(event);await tx.objectStore('outbox').put({...event,status:'pending',attempts:0});await tx.done;if(before)remember(before);if(!p.fromSync)changes.dispatchEvent(new Event('change'));return result;
  }catch(e){tx.abort();await tx.done.catch(()=>{});throw e;}
 }
 export async function initialize(){const db=await database;if(!(await db.count('boards')))await action({type:'board.create',payload:{name:'Inbox',description:'Save now. Organize when inspiration settles.'},recordHistory:false});}

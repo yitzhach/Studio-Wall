@@ -2,7 +2,15 @@
 
 Updated: 2026-10-16. Start here in a new chat; no old conversation is needed.
 
-## Latest update — whole-library backup / move devices (2026-10-16)
+## Latest update — live sync backend (code complete, not yet switched on) (2026-10-16)
+- Added a Studio Wall-specific Worker API (`worker/index.ts`, routed for `/api/*` via `run_worker_first`) backed by D1 (`records` table: owner, kind, id, updated_at, seq, data) and R2 (images keyed `email/file_ref`). Identity = Cloudflare Access JWT, verified in the Worker; fails closed (503/401) when bindings or Access vars are missing.
+- Client `src/sync.ts`: push changed records + missing images, pull by sequence cursor, merge through `action('library.merge')` (newest updated_at wins; Inbox remap; `fromSync` merges don't re-trigger sync). Footer shows Saved on this device / Syncing… / Synced online. UI defers re-render while a dialog is open. Service worker no longer caches `/api/*`.
+- NOT ACTIVE: creating the D1 database/R2 bucket from the agent was blocked by permissions, and Access must be set up by the user. Steps in docs/SYNC_SETUP.md. Deploying without them is safe (app stays local).
+- Deliberately separate from the shared studio platform (`studio-api` worker / `studio-db-prod`). Migration later = copy D1 records + R2 objects into the studio asset registry and point sync.ts at the studio API; local data shapes and client flow stay.
+- Validation: 23 tests (new sync.test.ts with an in-memory fake server: two-device round trip incl. image, idempotent re-sync, 503 → stays local, record validation); build and `wrangler deploy --dry-run` pass. Not tested against real D1/R2/Access or on a phone.
+- Next smallest task: user completes SYNC_SETUP steps 1–4 (or grants permission to create D1/R2), fill wrangler.jsonc bindings, deploy, verify desktop→phone.
+
+## Previous update — whole-library backup / move devices (2026-10-16)
 - New **Back up / move devices** dialog (sidebar foot on desktop; ⇄ button in the phone header). **Export everything** writes one ZIP with every board, reference, image blob and comment (including soft-deleted records so deletions carry). On touch devices with file-share support it opens the Share sheet (Files/AirDrop); otherwise it downloads. **Import backup or board** accepts the new library ZIP or the old single-board ZIP.
 - Library import runs as one atomic `library.merge` action in data.ts (activity + outbox logged). Records keep their IDs; newer `updated_at` wins, so re-importing an updated backup adds/updates only what changed and never removes local items. Another device's Inbox merges into the local Inbox. Images are written only if the file_ref is missing locally. Missing image or invalid record aborts with no partial writes. Visibility is forced to private on import.
 - IndexedDB name/version unchanged, so existing desktop data survives this update on the same hostname. A different hostname has separate storage; use Export everything → Import to move it.

@@ -1,5 +1,11 @@
 {
   "name": "studio-wall",
   "compatibility_date": "2026-10-01",
-  "assets": { "directory": "./dist", "not_found_handling": "single-page-application" }
+  "main": "worker/index.ts",
+  "assets": { "directory": "./dist", "not_found_handling": "single-page-application", "binding": "ASSETS", "run_worker_first": ["/api/*"] }
+  // Live sync (see docs/SYNC_SETUP.md): after creating the D1 database and R2 bucket, add
+  //   "d1_databases": [{ "binding": "DB", "database_name": "studio-wall-sync", "database_id": "<id>" }],
+  //   "r2_buckets": [{ "binding": "FILES", "bucket_name": "studio-wall-files" }],
+  //   "vars": { "ACCESS_TEAM_DOMAIN": "<team>.cloudflareaccess.com", "ACCESS_AUD": "<application audience tag>" }
+  // Until then the API answers 503 and the app stays device-local.
 }
