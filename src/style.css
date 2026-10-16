@@ -30,3 +30,4 @@
 .can-pan,.can-pan img{cursor:grab!important;user-select:none;-webkit-user-select:none}.can-pan img{-webkit-user-drag:none}.is-panning,.is-panning img{cursor:grabbing!important}
 
 .gallery-stage:not(.can-pan) img{cursor:zoom-in}
+.mobile-brand button[data-action=library]{margin-left:auto;margin-right:14px}

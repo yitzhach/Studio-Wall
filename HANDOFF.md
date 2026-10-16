@@ -1,8 +1,15 @@
 # Studio Wall handoff
 
-Updated: 2026-10-02. Start here in a new chat; no old conversation is needed.
+Updated: 2026-10-16. Start here in a new chat; no old conversation is needed.
 
-## Latest update — single-click expanded image zoom (2026-10-03)
+## Latest update — whole-library backup / move devices (2026-10-16)
+- New **Back up / move devices** dialog (sidebar foot on desktop; ⇄ button in the phone header). **Export everything** writes one ZIP with every board, reference, image blob and comment (including soft-deleted records so deletions carry). On touch devices with file-share support it opens the Share sheet (Files/AirDrop); otherwise it downloads. **Import backup or board** accepts the new library ZIP or the old single-board ZIP.
+- Library import runs as one atomic `library.merge` action in data.ts (activity + outbox logged). Records keep their IDs; newer `updated_at` wins, so re-importing an updated backup adds/updates only what changed and never removes local items. Another device's Inbox merges into the local Inbox. Images are written only if the file_ref is missing locally. Missing image or invalid record aborts with no partial writes. Visibility is forced to private on import.
+- IndexedDB name/version unchanged, so existing desktop data survives this update on the same hostname. A different hostname has separate storage; use Export everything → Import to move it.
+- This is manual transfer, NOT live sync. Live cross-device sync needs the backend (identity + D1/R2 or the studio platform + authorized API). Not started; awaiting the user's decision on backend ownership and sign-in method.
+- Validation: 20 tests (new backup.test.ts: round-trip to an empty device, Inbox merge, idempotent re-import, missing-image rollback) and production build pass. Real iPhone Share-sheet/Files import not verified.
+
+## Previous update — single-click expanded image zoom (2026-10-03)
 - Expanded gallery now shows the zoom-in magnifying-glass cursor at Fit. One click zooms to 200%; double-click is no longer required. Once zoomed, the grab cursor and drag-to-pan remain active; clicking or releasing a drag does not unexpectedly zoom back out. Fit / minus controls zoom out.
 - Detail-view double-click to expand remains unchanged.
 - Validation: all 18 tests and production build pass; gallery test covers single-click zoom and subsequent-click stability. Physical browser QA and Cloudflare rollout remain unverified.

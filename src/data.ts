@@ -5,7 +5,7 @@ export type Board=Base & {name:string;description:string;cover_pin_id:string|nul
 export type Annotation={id:string;tool:'pen'|'circle'|'arrow';points:{x:number;y:number}[];comment:string};
 export type Pin=Base & {board_id:string;file_ref:string|null;source_url:string;source_credit:string;is_own:boolean;note:string;tags:string[];palette:string[];linked_type:string|null;linked_id:string|null;annotations?:Annotation[];meta:{kind:'image'|'idea'|'link';title:string}};
 export type Feedback=Base & {board_id:string;pin_id:string|null;text:string;starred?:boolean};
-export type Action={type:string;id?:string;payload?:any;blob?:Blob;recordHistory?:boolean};
+export type Action={type:string;id?:string;payload?:any;blob?:Blob;blobs?:Record<string,Blob>;recordHistory?:boolean};
 export const STUDIO='local-studio';
 export const database=openDB('studio-wall-v1',1,{upgrade(db){for(const store of ['boards','pins','feedback','activity_log','outbox'])db.createObjectStore(store,{keyPath:'id'});db.createObjectStore('files');}});
 const base=():Base=>{const now=new Date().toISOString();return {id:ulid(),studio_id:STUDIO,created_at:now,updated_at:now,created_by:'local-owner',actor_type:'human',version:1,deleted_at:null};};
@@ -24,7 +24,23 @@ export async function action(a:Action){
  const db=await database; const tx=db.transaction(['boards','pins','files','feedback','activity_log','outbox'],'readwrite');
  const b=base();let result:any;const p=a.payload||{};const before=a.recordHistory===false?null:{boards:await tx.objectStore('boards').getAll(),pins:await tx.objectStore('pins').getAll(),feedback:await tx.objectStore('feedback').getAll()};
  try{
- if(a.type==='pin.batch'){
+ if(a.type==='library.merge'){
+ // Merge a full-library backup from another device. Records keep their IDs; the newer updated_at wins, so repeated imports only add or update what changed.
+ const incoming={boards:p.boards,pins:p.pins,feedback:p.feedback||[]};if(!Array.isArray(incoming.boards)||!Array.isArray(incoming.pins)||!Array.isArray(incoming.feedback))throw Error('This backup is not supported.');
+ const okId=(v:unknown)=>typeof v==='string'&&/^[0-9A-Za-z_-]{1,64}$/.test(v);const okTime=(v:unknown)=>typeof v==='string'&&!isNaN(Date.parse(v));
+ const boards=tx.objectStore('boards'),pins=tx.objectStore('pins'),feedback=tx.objectStore('feedback'),files=tx.objectStore('files');
+ const localInbox=(await boards.getAll()).find(x=>x.name==='Inbox'&&!x.deleted_at);const remap=new Map<string,string>();const counts={boards:0,pins:0,feedback:0,images:0};
+ const newer=async(store:any,r:any)=>{const cur=await store.get(r.id);return !cur||Date.parse(r.updated_at)>Date.parse(cur.updated_at);};
+ for(const r of incoming.boards){if(!okId(r?.id)||typeof r.name!=='string'||!r.name.trim()||!okTime(r.updated_at))throw Error('This backup contains an invalid board.');
+ if(r.name==='Inbox'&&localInbox&&r.id!==localInbox.id){remap.set(r.id,localInbox.id);continue;}
+ if(await newer(boards,r)){await boards.put({...r,studio_id:STUDIO,description:String(r.description||''),visibility:'private',cover_pin_id:okId(r.cover_pin_id)?r.cover_pin_id:null,position:Number(r.position)||0});counts.boards++;}}
+ for(const r of incoming.pins){if(!okId(r?.id)||!okId(r.board_id)||!okTime(r.updated_at)||typeof r.note!=='string'||!Array.isArray(r.tags)||!r.tags.every((t:unknown)=>typeof t==='string')||!Array.isArray(r.palette)||!r.palette.every((c:unknown)=>typeof c==='string'&&/^#[0-9a-f]{6}$/i.test(c))||r.source_url&&!/^https?:\/\//i.test(r.source_url)||r.file_ref!==null&&!okId(r.file_ref))throw Error('This backup contains an invalid reference.');
+ const board_id=remap.get(r.board_id)||r.board_id;if(!(await boards.get(board_id)))throw Error('This backup is missing a board.');
+ if(r.file_ref&&!(await files.get(r.file_ref))){const blob=a.blobs?.[r.file_ref];if(!blob)throw Error('This backup is missing an image.');await files.put(blob,r.file_ref);counts.images++;}
+ if(await newer(pins,r)){await pins.put({...r,studio_id:STUDIO,board_id,meta:{kind:['image','idea','link'].includes(r.meta?.kind)?r.meta.kind:'idea',title:String(r.meta?.title||'')}});counts.pins++;}}
+ for(const r of incoming.feedback){if(!okId(r?.id)||!okId(r.board_id)||!okTime(r.updated_at)||typeof r.text!=='string'||r.text.length>4000)throw Error('This backup contains an invalid comment.');const board_id=remap.get(r.board_id)||r.board_id;if(!(await boards.get(board_id)))throw Error('This backup is missing a board.');if(await newer(feedback,r)){await feedback.put({...r,studio_id:STUDIO,board_id});counts.feedback++;}}
+ result={id:b.id,counts};
+ }else if(a.type==='pin.batch'){
  if(!['copy','move'].includes(p.operation)||!Array.isArray(p.ids)||!p.ids.length)throw Error('Select references and choose copy or move.');
  let dest=await tx.objectStore('boards').get(p.board_id||'');
  if(p.new_board_name?.trim()){dest={...base(),name:p.new_board_name.trim(),description:'',cover_pin_id:null,visibility:'private',position:(await tx.objectStore('boards').getAll()).length};await tx.objectStore('boards').put(dest);}
