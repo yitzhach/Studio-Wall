@@ -31,17 +31,24 @@ export async function action(a:Action){
  const incoming={boards:p.boards,pins:p.pins,feedback:p.feedback||[]};if(!Array.isArray(incoming.boards)||!Array.isArray(incoming.pins)||!Array.isArray(incoming.feedback))throw Error('This backup is not supported.');
  const okId=(v:unknown)=>typeof v==='string'&&/^[0-9A-Za-z_-]{1,64}$/.test(v);const okTime=(v:unknown)=>typeof v==='string'&&!isNaN(Date.parse(v));
  const boards=tx.objectStore('boards'),pins=tx.objectStore('pins'),feedback=tx.objectStore('feedback'),files=tx.objectStore('files');
- const localInbox=(await boards.getAll()).find(x=>x.name==='Inbox'&&!x.deleted_at);const remap=new Map<string,string>();const counts={boards:0,pins:0,feedback:0,images:0};
+ const localInbox=(await boards.getAll()).find(x=>x.name==='Inbox'&&!x.deleted_at);const remap=new Map<string,string>();const counts={boards:0,pins:0,feedback:0,images:0,skipped:0};
+ // Sync merges are lenient: one bad record or a not-yet-available image must not block everything else.
+ const lenient=p.lenient===true;
  const newer=async(store:any,r:any)=>{const cur=await store.get(r.id);return !cur||Date.parse(r.updated_at)>Date.parse(cur.updated_at);};
- for(const r of incoming.boards){if(!okId(r?.id)||typeof r.name!=='string'||!r.name.trim()||!okTime(r.updated_at))throw Error('This backup contains an invalid board.');
+ for(const r of incoming.boards){if(!okId(r?.id)||typeof r.name!=='string'||!r.name.trim()||!okTime(r.updated_at)){if(lenient){counts.skipped++;continue;}throw Error('This backup contains an invalid board.');}
  if(r.name==='Inbox'&&localInbox&&r.id!==localInbox.id){remap.set(r.id,localInbox.id);continue;}
  if(await newer(boards,r)){await boards.put({...r,studio_id:STUDIO,description:String(r.description||''),visibility:'private',cover_pin_id:okId(r.cover_pin_id)?r.cover_pin_id:null,position:Number(r.position)||0});counts.boards++;}}
- for(const r of incoming.pins){if(!okId(r?.id)||!okId(r.board_id)||!okTime(r.updated_at)||typeof r.note!=='string'||!Array.isArray(r.tags)||!r.tags.every((t:unknown)=>typeof t==='string')||!Array.isArray(r.palette)||!r.palette.every((c:unknown)=>typeof c==='string'&&/^#[0-9a-f]{6}$/i.test(c))||r.source_url&&!/^https?:\/\//i.test(r.source_url)||r.file_ref!==null&&!okId(r.file_ref))throw Error('This backup contains an invalid reference.');
- const board_id=remap.get(r.board_id)||r.board_id;if(!(await boards.get(board_id)))throw Error('This backup is missing a board.');
- if(r.file_ref&&!(await files.get(r.file_ref))){const blob=a.blobs?.[r.file_ref];if(!blob)throw Error('This backup is missing an image.');await files.put(blob,r.file_ref);counts.images++;}
+ for(const r of incoming.pins){if(!okId(r?.id)||!okId(r.board_id)||!okTime(r.updated_at)||typeof r.note!=='string'||!Array.isArray(r.tags)||!r.tags.every((t:unknown)=>typeof t==='string')||!Array.isArray(r.palette)||!r.palette.every((c:unknown)=>typeof c==='string'&&/^#[0-9a-f]{6}$/i.test(c))||r.source_url&&!/^https?:\/\//i.test(r.source_url)||r.file_ref!==null&&!okId(r.file_ref)){if(lenient){counts.skipped++;continue;}throw Error('This backup contains an invalid reference.');}
+ const board_id=remap.get(r.board_id)||r.board_id;if(!(await boards.get(board_id))){if(lenient){counts.skipped++;continue;}throw Error('This backup is missing a board.');}
+ if(r.file_ref&&!(await files.get(r.file_ref))){const blob=a.blobs?.[r.file_ref];if(blob){await files.put(blob,r.file_ref);counts.images++;}else if(!lenient)throw Error('This backup is missing an image.');}
  if(await newer(pins,r)){await pins.put({...r,studio_id:STUDIO,board_id,meta:{kind:['image','idea','link'].includes(r.meta?.kind)?r.meta.kind:'idea',title:String(r.meta?.title||'')}});counts.pins++;}}
- for(const r of incoming.feedback){if(!okId(r?.id)||!okId(r.board_id)||!okTime(r.updated_at)||typeof r.text!=='string'||r.text.length>4000)throw Error('This backup contains an invalid comment.');const board_id=remap.get(r.board_id)||r.board_id;if(!(await boards.get(board_id)))throw Error('This backup is missing a board.');if(await newer(feedback,r)){await feedback.put({...r,studio_id:STUDIO,board_id});counts.feedback++;}}
+ for(const r of incoming.feedback){if(!okId(r?.id)||!okId(r.board_id)||!okTime(r.updated_at)||typeof r.text!=='string'||r.text.length>4000){if(lenient){counts.skipped++;continue;}throw Error('This backup contains an invalid comment.');}const board_id=remap.get(r.board_id)||r.board_id;if(!(await boards.get(board_id))){if(lenient){counts.skipped++;continue;}throw Error('This backup is missing a board.');}if(await newer(feedback,r)){await feedback.put({...r,studio_id:STUDIO,board_id});counts.feedback++;}}
  result={id:b.id,counts};
+ }else if(a.type==='files.restore'){
+ // Backfill image blobs that arrived after their pins; only files a pin references and that are still missing.
+ const files=tx.objectStore('files');const refs=new Set((await tx.objectStore('pins').getAll()).map(x=>x.file_ref).filter(Boolean));let images=0;
+ for(const [ref,blob] of Object.entries(a.blobs||{}))if(refs.has(ref)&&!(await files.get(ref))){await files.put(blob,ref);images++;}
+ result={id:b.id,counts:{images}};
  }else if(a.type==='pin.batch'){
  if(!['copy','move'].includes(p.operation)||!Array.isArray(p.ids)||!p.ids.length)throw Error('Select references and choose copy or move.');
  let dest=await tx.objectStore('boards').get(p.board_id||'');

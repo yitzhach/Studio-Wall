@@ -25,6 +25,16 @@ describe('live sync',()=>{
   expect(await (await database).get('files',p.file_ref)).toBeTruthy();
   await phone.syncNow(()=>remote++);expect(remote).toBe(1);
  });
+ it('keeps cards when an image is not available yet, then backfills it',async()=>{
+  await initialize();const b=await action({type:'board.create',payload:{name:'Studio'}});
+  const p=await action({type:'pin.save',payload:{board_id:b.id,note:'Late image'},blob:new Blob(['img'],{type:'image/webp'})});
+  await action({type:'pin.save',payload:{board_id:b.id,note:'Fine'}});
+  await (await import('./sync')).syncNow(()=>{});const held=server.files.get(p.file_ref)!;server.files.delete(p.file_ref);
+  await resetDevice();await initialize();vi.resetModules();
+  const phone=await import('./sync');await phone.syncNow(()=>{});expect(phone.syncStatus().state).toBe('on');
+  expect((await snapshot()).pins.map(x=>x.note).sort()).toEqual(['Fine','Late image']);expect(await (await database).get('files',p.file_ref)).toBeUndefined();
+  server.files.set(p.file_ref,held);await phone.syncNow(()=>{});expect(await (await database).get('files',p.file_ref)).toBeTruthy();
+ });
  it('stays device-local when the API is not configured',async()=>{vi.stubGlobal('fetch',vi.fn(async()=>new Response('{}',{status:503})));const s=await import('./sync');await s.syncNow(()=>{});expect(s.syncStatus().state).toBe('off');});
  it('worker rejects malformed records',()=>{expect(validRecord('pins',{id:'../x',board_id:'a',updated_at:'2026-01-01T00:00:00Z'})).toBe(false);expect(validRecord('users',{id:'a',updated_at:'2026-01-01T00:00:00Z'})).toBe(false);expect(validRecord('boards',{id:'A1',updated_at:'2026-01-01T00:00:00Z'})).toBe(true);});
 });
