@@ -4,8 +4,7 @@
   "main": "worker/index.ts",
   "assets": { "directory": "./dist", "not_found_handling": "single-page-application", "binding": "ASSETS", "run_worker_first": ["/api/*"] },
   "d1_databases": [{ "binding": "DB", "database_name": "studio-wall-sync", "database_id": "51d3b1f0-0a10-4b4e-bf9f-247a682798fe" }],
-  "r2_buckets": [{ "binding": "FILES", "bucket_name": "studio-wall-files" }]
-  // Live sync also needs Cloudflare Access (see docs/SYNC_SETUP.md step 3), then add:
-  //   "vars": { "ACCESS_TEAM_DOMAIN": "<team>.cloudflareaccess.com", "ACCESS_AUD": "<application audience tag>" }
-  // Until then the API answers 503 and the app stays device-local.
+  "r2_buckets": [{ "binding": "FILES", "bucket_name": "studio-wall-files" }],
+  // Cloudflare Access application protecting studio-wall.bobdylan2000.workers.dev (see docs/SYNC_SETUP.md). Not secrets.
+  "vars": { "ACCESS_TEAM_DOMAIN": "frosty-block-644b.cloudflareaccess.com", "ACCESS_AUD": "fb5f80d53a5fda32330a92109fbfcb6ae2adb249437c6123f542c9720c45d723" }
 }

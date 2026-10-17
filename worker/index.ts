@@ -9,7 +9,7 @@ const json=(body:unknown,status=200)=>new Response(JSON.stringify(body),{status,
 const b64url=(s:string)=>Uint8Array.from(atob(s.replace(/-/g,'+').replace(/_/g,'/')+'==='.slice((s.length+3)%4)),c=>c.charCodeAt(0));
 let certs:{at:number;keys:any[]}|null=null;
 async function identity(req:Request,env:Env):Promise<string|null>{
- const token=req.headers.get('cf-access-jwt-assertion');if(!token||!env.ACCESS_TEAM_DOMAIN||!env.ACCESS_AUD)return null;
+ const token=req.headers.get('cf-access-jwt-assertion')||req.headers.get('cookie')?.match(/(?:^|;\s*)CF_Authorization=([^;]+)/)?.[1];if(!token||!env.ACCESS_TEAM_DOMAIN||!env.ACCESS_AUD)return null;
  const [h,p,s]=token.split('.');if(!h||!p||!s)return null;
  const header=JSON.parse(new TextDecoder().decode(b64url(h))),claims=JSON.parse(new TextDecoder().decode(b64url(p)));
  const team='https://'+env.ACCESS_TEAM_DOMAIN.replace(/^https?:\/\//,'').replace(/\/$/,'');

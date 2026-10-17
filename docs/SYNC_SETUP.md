@@ -4,8 +4,8 @@ Code is in `worker/index.ts` (API) and `src/sync.ts` (client). Until the steps b
 
 1. **D1 database** — done: `studio-wall-sync` (bound as DB in wrangler.jsonc). Tables are created automatically on first request.
 2. **R2 bucket** — done: `studio-wall-files` (bound as FILES). Keep it private.
-3. **Sign-in (Cloudflare Access)** — Zero Trust → Access → Applications → Add → Self-hosted. Domain: the hostname Studio Wall is served on (whole site). Policy: Allow → Include → Emails → your email (one-time PIN login is fine). After saving, copy the **Application Audience (AUD) tag**; the team domain is under Zero Trust → Settings (e.g. `yourteam.cloudflareaccess.com`).
-4. **Add the Access values** — put ACCESS_TEAM_DOMAIN and ACCESS_AUD in `vars` in wrangler.jsonc (not secrets; never commit passwords or API tokens).
+3. **Sign-in (Cloudflare Access)** — done 2026-10-17: app protects studio-wall.bobdylan2000.workers.dev, team frosty-block-644b, Owner policy. To recreate: Zero Trust → Access → Applications → Add → Self-hosted. Domain: the hostname Studio Wall is served on (whole site). Policy: Allow → Include → Emails → your email (one-time PIN login is fine). After saving, copy the **Application Audience (AUD) tag**; the team domain is under Zero Trust → Settings (e.g. `yourteam.cloudflareaccess.com`).
+4. **Access values** — done: ACCESS_TEAM_DOMAIN and ACCESS_AUD are in `vars` in wrangler.jsonc.
 5. Deploy, open the site on desktop and sign in. The sidebar footer should read **Synced online**. Then open it on the phone, sign in with the same email, and your boards appear.
 
 ## How it works
