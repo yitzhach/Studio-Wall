@@ -1,14 +1,31 @@
 # Studio Wall handoff
 
-Updated: 2026-10-16. Start here in a new chat; no old conversation is needed.
+Updated: 2026-10-17. Start here in a new chat; no old conversation is needed.
 
-## Latest update — live sync backend (code complete, not yet switched on) (2026-10-16)
+## Current state (2026-10-17) — read this first
+- **Live:** https://studio-wall.bobdylan2000.workers.dev (Cloudflare Worker `studio-wall`, deploys automatically from `main` via Workers Builds: `npm run build` then `npx wrangler deploy`). Whole site is behind Cloudflare Access (team `frosty-block-644b`, Owner policy = user's email, one-time PIN). PR preview builds fail instantly on non-production branches; production builds from main succeed — ignore preview failures, verify via the main build log.
+- **Storage:** each browser keeps a full local copy in IndexedDB (works offline). With sync on, boards/cards/comments are also stored in D1 `studio-wall-sync` and image files in private R2 bucket `studio-wall-files` (key `email/file_ref`). So images live both locally and in Cloudflare.
+- **Sync status:** first live run (2026-10-17) — desktop uploaded 5 boards/~50 images, phone uploaded its own Inbox (7 images) + "Art Ideas", but the phone did not show desktop boards: one missing/undownloadable image aborted the whole strict merge. Fixed in PR #2 (lenient sync merge, image backfill, upload retry). **PR #2 may still be open — check; once merged, confirm on the phone that desktop boards + images appear and phone items reach desktop.**
+- **Open PR #2 also contains** the pinch/double-tap zoom work below.
+- **Next smallest task:** merge PR #2, verify desktop↔phone sync and the new zoom gestures on a real iPhone; then fix anything found. After that: HANDOFF "Next priorities" (client share links, server-side image processing).
+
+## Latest update — touch zoom + double-tap (2026-10-17, PR #2)
+- New `src/zoom.ts` (`bindTouchZoom`, `zoomAt`): two-finger pinch zoom (100–400%, anchored at the pinch midpoint), one-finger pan while zoomed, double-tap detection. Fitted images keep `touch-action: pan-y` so the detail view still scrolls; zoomed images take `touch-action: none`.
+- Detail view: pinch zooms in place; double-tap (touch) or double-click (mouse) opens the full-screen gallery.
+- Full-screen gallery: double-tap / double-click toggles 200% (at the tapped point) ↔ Fit; pinch zooms continuously; swipe-to-navigate only at Fit and never after a pinch. Mouse single-click no longer zooms (replaced by double-click, per user). +/−/Fit/keys zoom around the centre. Guard prevents iOS's synthetic dblclick from double-firing after a touch double-tap.
+- Validation: 26 tests (new zoom.test.ts: pinch clamp/anchor, one-finger pan, double-tap timing/distance, mouse and post-pinch exclusions; viewer test updated for double-click toggle) and build pass. NOT verified on a real iPhone — pinch feel, Safari dblclick behaviour and `touch-action` interplay need device testing.
+
+## Sync robustness fix (2026-10-17, PR #2)
+- `library.merge` takes `lenient:true` from sync: invalid records / missing boards are skipped (`counts.skipped`), a card whose image is not downloadable is still saved. ZIP import stays strict/atomic.
+- New `files.restore` action + `backfill()` in sync.ts: each sync fetches up to 40 missing images for non-deleted pins; only refs referenced by a pin and absent locally are written.
+- Push: per-image upload failures no longer abort the push; failed refs are retried next run (`retry` list in localStorage sync state). Unknown blob types are uploaded as image/webp.
+
+## Previous update — live sync backend (2026-10-16/17)
 - Added a Studio Wall-specific Worker API (`worker/index.ts`, routed for `/api/*` via `run_worker_first`) backed by D1 (`records` table: owner, kind, id, updated_at, seq, data) and R2 (images keyed `email/file_ref`). Identity = Cloudflare Access JWT, verified in the Worker; fails closed (503/401) when bindings or Access vars are missing.
 - Client `src/sync.ts`: push changed records + missing images, pull by sequence cursor, merge through `action('library.merge')` (newest updated_at wins; Inbox remap; `fromSync` merges don't re-trigger sync). Footer shows Saved on this device / Syncing… / Synced online. UI defers re-render while a dialog is open. Service worker no longer caches `/api/*`.
-- D1 `studio-wall-sync` and R2 `studio-wall-files` created 2026-10-16 and bound in wrangler.jsonc. Access app (team frosty-block-644b, studio-wall.bobdylan2000.workers.dev, Owner policy) created by user 2026-10-17; vars set in wrangler.jsonc. Sync becomes active once this is merged and deployed — not yet verified live. App requests persistent browser storage on boot. Steps in docs/SYNC_SETUP.md. Deploying without them is safe (app stays local).
+- D1 `studio-wall-sync` and R2 `studio-wall-files` created 2026-10-16 and bound in wrangler.jsonc. Access app (team frosty-block-644b, studio-wall.bobdylan2000.workers.dev, Owner policy) created by user 2026-10-17; vars set in wrangler.jsonc. Merged (PR #1) and deployed 2026-10-17 04:20 UTC, version 3fd835ac-f0ee-4bde-8bef-e29c6f9523c7, build log shows DB/FILES/Access vars bound; unauthenticated requests to site and /api redirect to Access login. PR preview builds fail instantly (non-production branch builds); production builds from main succeed. Real sign-in + desktop→phone sync not yet confirmed by the user. App requests persistent browser storage on boot. Steps in docs/SYNC_SETUP.md. Deploying without them is safe (app stays local).
 - Deliberately separate from the shared studio platform (`studio-api` worker / `studio-db-prod`). Migration later = copy D1 records + R2 objects into the studio asset registry and point sync.ts at the studio API; local data shapes and client flow stay.
 - Validation: 23 tests (new sync.test.ts with an in-memory fake server: two-device round trip incl. image, idempotent re-sync, 503 → stays local, record validation); build and `wrangler deploy --dry-run` pass. Not tested against real D1/R2/Access or on a phone.
-- Next smallest task: merge PR, confirm Cloudflare deploy, sign in on desktop (footer should read Synced online), then phone; verify board + images arrive.
 
 ## Previous update — whole-library backup / move devices (2026-10-16)
 - New **Back up / move devices** dialog (sidebar foot on desktop; ⇄ button in the phone header). **Export everything** writes one ZIP with every board, reference, image blob and comment (including soft-deleted records so deletions carry). On touch devices with file-share support it opens the Share sheet (Files/AirDrop); otherwise it downloads. **Import backup or board** accepts the new library ZIP or the old single-board ZIP.
@@ -17,7 +34,7 @@ Updated: 2026-10-16. Start here in a new chat; no old conversation is needed.
 - This is manual transfer, NOT live sync. Live cross-device sync needs the backend (identity + D1/R2 or the studio platform + authorized API). Not started; awaiting the user's decision on backend ownership and sign-in method.
 - Validation: 20 tests (new backup.test.ts: round-trip to an empty device, Inbox merge, idempotent re-import, missing-image rollback) and production build pass. Real iPhone Share-sheet/Files import not verified.
 
-## Previous update — single-click expanded image zoom (2026-10-03)
+## Previous update — single-click expanded image zoom (2026-10-03; superseded by double-click toggle 2026-10-17)
 - Expanded gallery now shows the zoom-in magnifying-glass cursor at Fit. One click zooms to 200%; double-click is no longer required. Once zoomed, the grab cursor and drag-to-pan remain active; clicking or releasing a drag does not unexpectedly zoom back out. Fit / minus controls zoom out.
 - Detail-view double-click to expand remains unchanged.
 - Validation: all 18 tests and production build pass; gallery test covers single-click zoom and subsequent-click stability. Physical browser QA and Cloudflare rollout remain unverified.
