@@ -21,7 +21,7 @@ it('creates a board, saves and edits an idea, searches, and previews feedback',a
  click('[data-pin]');(document.querySelector('[name=note]') as HTMLTextAreaElement).value='A revised direction';
  document.querySelector('#edit-form')!.dispatchEvent(new Event('submit',{bubbles:true,cancelable:true}));
  await vi.waitFor(async()=>expect((await snapshot()).pins[0].note).toBe('A revised direction'));
- click('[data-action="share"]');click('#client-preview');await vi.waitFor(()=>expect(document.querySelector('.preview-banner')?.textContent).toContain('local demonstration'));
+ click('[data-action="share"]');click('#client-preview');await vi.waitFor(()=>expect(document.querySelector('.preview-banner')?.textContent).toContain('on this device only'));
  (document.querySelector('#feedback-text') as HTMLTextAreaElement).value='Try a little more blue.';
  document.querySelector('#feedback-form')!.dispatchEvent(new Event('submit',{bubbles:true,cancelable:true}));
  await vi.waitFor(()=>expect(document.querySelector('.feedback article')?.textContent).toContain('more blue'));
@@ -30,10 +30,8 @@ it('creates a board, saves and edits an idea, searches, and previews feedback',a
  document.querySelector('dialog form')!.dispatchEvent(new Event('submit',{bubbles:true,cancelable:true}));
  await vi.waitFor(()=>expect(document.querySelector('h1')?.textContent).toContain('Client copies'));
  expect((await snapshot()).pins).toHaveLength(2);
- click('[data-action="share"]');(document.querySelector('[name=mode]') as HTMLSelectElement).value='password';
- document.querySelector('#share-settings')!.dispatchEvent(new Event('submit',{bubbles:true,cancelable:true}));
- await vi.waitFor(async()=>expect((await snapshot()).boards.find(b=>b.name==='Client copies')?.share_settings?.mode).toBe('password'));
- await vi.waitFor(()=>expect(document.querySelector<HTMLDialogElement>('#modal')?.open).toBe(false));
+ click('[data-action="share"]');expect(document.querySelector('#modal')?.textContent).toContain('Client links need sync');expect(document.querySelector('#modal [name=mode]')).toBeNull();
+ (document.querySelector('#modal') as HTMLDialogElement).close();
  expect((await snapshot()).boards.find(b=>b.name==='Client copies')?.visibility).toBe('private');
  click('[data-pin]');click('#star-pin');await vi.waitFor(()=>expect(document.querySelector('#star-pin')?.getAttribute('aria-pressed')).toBe('true'));
  (document.querySelector('#pin-comment textarea') as HTMLTextAreaElement).value='A client favorite';document.querySelector('#pin-comment')!.dispatchEvent(new Event('submit',{bubbles:true,cancelable:true}));

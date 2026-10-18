@@ -4,9 +4,11 @@ export type Base={id:string;studio_id:string;created_at:string;updated_at:string
 export type Board=Base & {name:string;description:string;cover_pin_id:string|null;visibility:'private'|'shared_link';position:number;comments_enabled?:boolean;share_settings?:{mode:'public'|'private'|'password';permission:'view'|'comment'|'contribute'}};
 export type Annotation={id:string;tool:'pen'|'circle'|'arrow';points:{x:number;y:number}[];comment:string};
 export type Pin=Base & {board_id:string;file_ref:string|null;source_url:string;source_credit:string;is_own:boolean;note:string;tags:string[];palette:string[];linked_type:string|null;linked_id:string|null;annotations?:Annotation[];meta:{kind:'image'|'idea'|'link';title:string}};
-export type Feedback=Base & {board_id:string;pin_id:string|null;text:string;starred?:boolean};
+export type Feedback=Base & {board_id:string;pin_id:string|null;text:string;starred?:boolean;author_name?:string};
 export type Action={type:string;id?:string;payload?:any;blob?:Blob;blobs?:Record<string,Blob>;recordHistory?:boolean};
 export const STUDIO='local-studio';
+/** Deleted boards and cards can be restored for this many days; afterwards their unused image files are cleaned up. */
+export const RETENTION_DAYS=30;
 // Fires after every committed local write so sync can push it; sync's own merges are marked fromSync.
 export const changes=new EventTarget();
 export const database=openDB('studio-wall-v1',1,{upgrade(db){for(const store of ['boards','pins','feedback','activity_log','outbox'])db.createObjectStore(store,{keyPath:'id'});db.createObjectStore('files');}});
@@ -90,6 +92,20 @@ export async function action(a:Action){
  result=existing?{...existing,starred:!existing.starred,updated_at:b.updated_at,version:existing.version+1}:{...b,board_id:board.id,pin_id:pin.id,text:'',starred:true};await tx.objectStore('feedback').put(result);
  }else if(a.type==='feedback.add'){
  const board=await tx.objectStore('boards').get(p.board_id);if(!board||board.deleted_at||!p.text?.trim())throw Error('Add a comment to an existing board.');if(p.client_preview&&(board.comments_enabled===false||board.share_settings?.permission==='view'))throw Error('Comments are turned off for this board.');if(p.text.trim().length>4000)throw Error('Keep comments under 4,000 characters.');if(p.pin_id){const pin=await tx.objectStore('pins').get(p.pin_id);if(!pin||pin.deleted_at||pin.board_id!==p.board_id)throw Error('Comment reference must belong to this board.');}result={...b,board_id:p.board_id,pin_id:p.pin_id||null,text:p.text.trim()};await tx.objectStore('feedback').put(result);
+ }else if(a.type==='pin.restore'||a.type==='board.restore'){
+ // Undo a delete within the retention window. A card whose board is gone returns to the Inbox; a board brings back the cards deleted with it.
+ const store=tx.objectStore(a.type==='pin.restore'?'pins':'boards');result=await store.get(a.id!);if(!result||!result.deleted_at)throw Error('This item is not in Recently deleted.');
+ if(Date.parse(result.deleted_at)<Date.now()-RETENTION_DAYS*86400_000)throw Error('This item was deleted too long ago to restore.');
+ const removedAt=result.deleted_at;result={...result,deleted_at:null,updated_at:b.updated_at,version:result.version+1};
+ if(a.type==='pin.restore'){const board=await tx.objectStore('boards').get(result.board_id);if(!board||board.deleted_at){const inbox=(await tx.objectStore('boards').getAll()).find(x=>x.name==='Inbox'&&!x.deleted_at);if(!inbox)throw Error('Restore its board first.');result.board_id=inbox.id;}}
+ else for(const pin of await tx.objectStore('pins').getAll())if(pin.board_id===result.id&&pin.deleted_at===removedAt)await tx.objectStore('pins').put({...pin,deleted_at:null,updated_at:b.updated_at,version:pin.version+1});
+ await store.put(result);
+ }else if(a.type==='files.purge'){
+ // Free device storage: drop image files of cards deleted more than RETENTION_DAYS ago, unless any live or recently deleted card shares the file.
+ const cutoff=Date.now()-RETENTION_DAYS*86400_000,keep=new Set<string>(),old=new Set<string>();
+ for(const pin of await tx.objectStore('pins').getAll())if(pin.file_ref)(pin.deleted_at&&Date.parse(pin.deleted_at)<cutoff?old:keep).add(pin.file_ref);
+ let images=0;for(const ref of old)if(!keep.has(ref)&&await tx.objectStore('files').get(ref)){await tx.objectStore('files').delete(ref);images++;}
+ result={id:b.id,counts:{images}};
  }else if(a.type==='board.share'||a.type==='board.start_artwork'){throw Error('This needs your shared backend. No link has been created.');}
  else {
  const [entity,op]=a.type.split('.');if(!['board','pin'].includes(entity))throw Error('Unknown action');
@@ -111,7 +127,18 @@ export async function action(a:Action){
  }else throw Error('Unknown action');
  result.updated_at=b.updated_at;result.version++;await store.put(result);
  }
- const event={...base(),action:a.type,record_id:result.id,record:result};await tx.objectStore('activity_log').put(event);await tx.objectStore('outbox').put({...event,status:'pending',attempts:0});await tx.done;if(before)remember(before);if(!p.fromSync)changes.dispatchEvent(new Event('change'));return result;
+ // A routine storage cleanup that removed nothing is not worth an activity entry.
+ if(!(a.type==='files.purge'&&!result.counts.images)){const event={...base(),action:a.type,record_id:result.id,record:result};await tx.objectStore('activity_log').put(event);await tx.objectStore('outbox').put({...event,status:'pending',attempts:0});}await tx.done;if(before)remember(before);if(!p.fromSync)changes.dispatchEvent(new Event('change'));return result;
  }catch(e){tx.abort();await tx.done.catch(()=>{});throw e;}
 }
 export async function initialize(){const db=await database;if(!(await db.count('boards')))await action({type:'board.create',payload:{name:'Inbox',description:'Save now. Organize when inspiration settles.'},recordHistory:false});}
+
+/** Boards and cards deleted within the retention window, newest first. Cards deleted together with their board are listed under the board. */
+export async function recentlyDeleted(){
+ const db=await database;const cutoff=Date.now()-RETENTION_DAYS*86400_000;const [boards,pins]=await Promise.all([db.getAll('boards'),db.getAll('pins')]) as [Board[],Pin[]];
+ const recent=(x:{deleted_at:string|null})=>!!x.deleted_at&&Date.parse(x.deleted_at)>=cutoff;const byId=new Map(boards.map(x=>[x.id,x]));
+ const deletedBoards=boards.filter(recent).map(board=>({board,count:pins.filter(p=>p.board_id===board.id&&p.deleted_at===board.deleted_at).length}));
+ const deletedPins=pins.filter(p=>recent(p)&&byId.get(p.board_id)?.deleted_at!==p.deleted_at);
+ const newest=(a:{deleted_at:string|null},b:{deleted_at:string|null})=>String(b.deleted_at).localeCompare(String(a.deleted_at));
+ return {boards:deletedBoards.sort((a,b)=>newest(a.board,b.board)),pins:deletedPins.sort(newest)};
+}
