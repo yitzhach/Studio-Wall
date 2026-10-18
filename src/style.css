@@ -31,3 +31,10 @@
 
 .gallery-stage:not(.can-pan) img{cursor:zoom-in}
 .mobile-brand button[data-action=library]{margin-left:auto;margin-right:14px}
+/* Sync state dot on the phone header button: green synced, amber paused, pulsing while syncing. */
+.mobile-brand button[data-action=library]{position:relative}
+.mobile-brand button[data-sync]:not([data-sync=off])::after{content:'';position:absolute;top:-2px;right:-4px;width:7px;height:7px;border-radius:50%;background:#7fb069}
+.mobile-brand button[data-sync=error]::after{background:#e0a33a}
+.mobile-brand button[data-sync=syncing]::after{background:var(--accent);animation:sync-pulse 1s ease-in-out infinite alternate}
+@keyframes sync-pulse{from{opacity:.35}to{opacity:1}}
+@media(prefers-reduced-motion:reduce){.mobile-brand button[data-sync=syncing]::after{animation:none}}

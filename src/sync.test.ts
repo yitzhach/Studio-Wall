@@ -38,3 +38,13 @@ describe('live sync',()=>{
  it('stays device-local when the API is not configured',async()=>{vi.stubGlobal('fetch',vi.fn(async()=>new Response('{}',{status:503})));const s=await import('./sync');await s.syncNow(()=>{});expect(s.syncStatus().state).toBe('off');});
  it('worker rejects malformed records',()=>{expect(validRecord('pins',{id:'../x',board_id:'a',updated_at:'2026-01-01T00:00:00Z'})).toBe(false);expect(validRecord('users',{id:'a',updated_at:'2026-01-01T00:00:00Z'})).toBe(false);expect(validRecord('boards',{id:'A1',updated_at:'2026-01-01T00:00:00Z'})).toBe(true);});
 });
+describe('worker upload checks',()=>{
+ it('identifies images by their bytes and rejects anything else',async()=>{
+  const {sniffImage}=await import('../worker/index');const enc=(s:string)=>new TextEncoder().encode(s);
+  expect(sniffImage(new Uint8Array([0xff,0xd8,0xff,0xe0]))).toBe('image/jpeg');
+  expect(sniffImage(new Uint8Array([0x89,0x50,0x4e,0x47,13,10,26,10]))).toBe('image/png');
+  expect(sniffImage(enc('RIFF\0\0\0\0WEBPVP8 '))).toBe('image/webp');
+  expect(sniffImage(enc('\0\0\0\x18ftypheic'))).toBe('image/heic');
+  expect(sniffImage(enc('<svg xmlns='))).toBeNull();expect(sniffImage(enc('<html>'))).toBeNull();
+ });
+});

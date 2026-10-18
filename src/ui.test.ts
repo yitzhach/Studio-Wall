@@ -2,6 +2,8 @@
 import 'fake-indexeddb/auto';
 import {it,expect,vi} from 'vitest';
 import {snapshot} from './data';
+// No sync server in tests: the API answers "not configured", so the app stays device-local.
+vi.stubGlobal('fetch',vi.fn(async()=>new Response('{}',{status:503})));
 it('creates a board, saves and edits an idea, searches, and previews feedback',async()=>{
  document.body.innerHTML='<div id="app"></div>';
  HTMLDialogElement.prototype.showModal=function(){this.open=true;};HTMLDialogElement.prototype.close=function(){this.open=false;};

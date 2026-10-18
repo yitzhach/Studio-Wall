@@ -1,15 +1,22 @@
 # Studio Wall handoff
 
-Updated: 2026-10-17. Start here in a new chat; no old conversation is needed.
+Updated: 2026-10-18. Start here in a new chat; no old conversation is needed.
 
 ## Current state (2026-10-17) — read this first
 - **Live:** https://studio-wall.bobdylan2000.workers.dev (Cloudflare Worker `studio-wall`, deploys automatically from `main` via Workers Builds: `npm run build` then `npx wrangler deploy`). Whole site is behind Cloudflare Access (team `frosty-block-644b`, Owner policy = user's email, one-time PIN). PR preview builds fail instantly on non-production branches; production builds from main succeed — ignore preview failures, verify via the main build log.
 - **Storage:** each browser keeps a full local copy in IndexedDB (works offline). With sync on, boards/cards/comments are also stored in D1 `studio-wall-sync` and image files in private R2 bucket `studio-wall-files` (key `email/file_ref`). So images live both locally and in Cloudflare.
-- **Sync status:** first live run (2026-10-17) — desktop uploaded 5 boards/~50 images, phone uploaded its own Inbox (7 images) + "Art Ideas", but the phone did not show desktop boards: one missing/undownloadable image aborted the whole strict merge. Fixed in PR #2 (lenient sync merge, image backfill, upload retry). **PR #2 may still be open — check; once merged, confirm on the phone that desktop boards + images appear and phone items reach desktop.**
-- **Open PR #2 also contains** the pinch/double-tap zoom work below.
-- **Next smallest task:** merge PR #2, verify desktop↔phone sync and the new zoom gestures on a real iPhone; then fix anything found. After that: HANDOFF "Next priorities" (client share links, server-side image processing).
+- **Sync status:** PR #2 merged and deployed 2026-10-18; D1 shows pin updates arriving after the merge (seq 90, 2026-10-18 01:43 UTC). First live run (2026-10-17) — desktop uploaded 5 boards/~50 images, phone uploaded its own Inbox (7 images) + "Art Ideas", but the phone did not show desktop boards: one missing/undownloadable image aborted the whole strict merge. Fixed in PR #2 (lenient sync merge, image backfill, upload retry). **Still to confirm by the user: desktop boards + images now appear on the phone and phone items reach desktop.**
+- **Next smallest task:** user verifies desktop↔phone sync, zoom gestures, colour search and the phone sync dot on a real iPhone; fix anything found. After that: HANDOFF "Next priorities" (client share links, server-side image processing).
 
-## Latest update — touch zoom + double-tap (2026-10-17, PR #2)
+## Latest update — colour-word search, atomic board import, upload checks, sync dot (2026-10-18)
+- Search matches plain colour words from each card's palette (`src/colour.ts`: red/orange/yellow/green/teal/blue/purple/pink/brown, grey/black/white, warm/cool/neutral, light/dark), in addition to notes, tags, credits and hex codes.
+- Single-board ZIP import is now one atomic `board.import` action (new IDs for board, cards and image refs; credits/notes/palettes/markup kept). A bad or incomplete ZIP leaves nothing behind. Closes the ZIP part of priority 6; multi-file image upload is still one action per image.
+- Worker uploads: stored content type comes from the file's magic bytes (`sniffImage`: JPEG/PNG/WebP/GIF/HEIC); anything else is rejected with 415. Client header is no longer trusted. Server-side re-encode/metadata stripping is still not done.
+- Phone header ⇄ button shows a sync dot (green synced, amber paused, pulsing while syncing; none when local-only) and its title carries the status text.
+- UI test stubs fetch (503) so tests no longer try to reach a sync server.
+- Validation: 29 tests (new colour.test.ts, single-board import atomicity, sniffImage) and build pass; wrangler dry-run OK. Not checked on a device.
+
+## Previous update — touch zoom + double-tap (2026-10-17, PR #2)
 - New `src/zoom.ts` (`bindTouchZoom`, `zoomAt`): two-finger pinch zoom (100–400%, anchored at the pinch midpoint), one-finger pan while zoomed, double-tap detection. Fitted images keep `touch-action: pan-y` so the detail view still scrolls; zoomed images take `touch-action: none`.
 - Detail view: pinch zooms in place; double-tap (touch) or double-click (mouse) opens the full-screen gallery.
 - Full-screen gallery: double-tap / double-click toggles 200% (at the tapped point) ↔ Fit; pinch zooms continuously; swipe-to-navigate only at Fit and never after a pinch. Mouse single-click no longer zooms (replaced by double-click, per user). +/−/Fit/keys zoom around the centre. Guard prevents iOS's synthetic dblclick from double-firing after a touch double-tap.
@@ -134,7 +141,7 @@ Eight data-layer tests and one DOM integration flow (nine tests total) cover tra
 3. Backend contract: studio identity, asset registry/file_ref, actor identity, API actions, outbox idempotency/revisions/conflicts, authorized image delivery. Do not send existing provisional events until migration semantics are settled.
 4. Client access: owner-selected full board or a curated subset (scope pins and media, never the whole collection); client stars, pin notes and an owner review of favorites. Revocable/expiring board links, server-enforced view/comment/contribute roles, guest identity, optional login. Comments and contributions must be scoped by board. Do not treat the preview UI as access control.
 5. Connect AI through the same authorized action endpoint. Never give an assistant direct database/bucket access.
-6. Improve search from exact palette hex to perceptual colour families if desired. Improve multi-file and ZIP import to all-or-nothing batch transactions before large-scale use. Soft-deleted blobs currently retained for future sync; design tombstone retention and cleanup.
+6. (Done 2026-10-18: colour-word search, atomic single-board ZIP import.) Remaining: make multi-file image upload one all-or-nothing batch before large-scale use. Soft-deleted blobs currently retained for future sync; design tombstone retention and cleanup.
 
 ## Useful commands
 npm ci; npm test; npm run build; npm run dev.

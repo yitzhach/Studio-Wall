@@ -44,6 +44,16 @@ export async function action(a:Action){
  if(await newer(pins,r)){await pins.put({...r,studio_id:STUDIO,board_id,meta:{kind:['image','idea','link'].includes(r.meta?.kind)?r.meta.kind:'idea',title:String(r.meta?.title||'')}});counts.pins++;}}
  for(const r of incoming.feedback){if(!okId(r?.id)||!okId(r.board_id)||!okTime(r.updated_at)||typeof r.text!=='string'||r.text.length>4000){if(lenient){counts.skipped++;continue;}throw Error('This backup contains an invalid comment.');}const board_id=remap.get(r.board_id)||r.board_id;if(!(await boards.get(board_id))){if(lenient){counts.skipped++;continue;}throw Error('This backup is missing a board.');}if(await newer(feedback,r)){await feedback.put({...r,studio_id:STUDIO,board_id});counts.feedback++;}}
  result={id:b.id,counts};
+ }else if(a.type==='board.import'){
+ // Single-board ZIP import: new IDs for the board, cards and image refs; credits, notes, palettes and markup are kept.
+ if(typeof p.name!=='string'||!p.name.trim()||!Array.isArray(p.pins)||p.pins.length>1000)throw Error('This board export is not supported.');
+ const board={...base(),name:p.name.trim(),description:String(p.description||''),cover_pin_id:null,visibility:'private',position:(await tx.objectStore('boards').getAll()).length};await tx.objectStore('boards').put(board);
+ const pins=[];
+ for(const src of p.pins){const blob=src.file_ref?a.blobs?.[src.file_ref]:undefined;if(src.file_ref&&!blob)throw Error('This board contains invalid or missing data.');
+  if(src.source_url&&!/^https?:\/\//i.test(src.source_url))throw Error('Use a complete http or https link.');
+  const file_ref=blob?ulid():null;const pin={...base(),board_id:board.id,file_ref,source_url:src.source_url||'',source_credit:String(src.source_credit||''),is_own:!!src.is_own,note:String(src.note||''),tags:Array.isArray(src.tags)?src.tags.map(String):[],palette:Array.isArray(src.palette)?src.palette.filter((c:unknown)=>typeof c==='string'&&/^#[0-9a-f]{6}$/i.test(c)):[],linked_type:null,linked_id:null,annotations:Array.isArray(src.annotations)?src.annotations:[],meta:{kind:['image','idea','link'].includes(src.meta?.kind)?src.meta.kind:blob?'image':src.source_url?'link':'idea',title:String(src.meta?.title||'')}};
+  if(blob&&file_ref)await tx.objectStore('files').put(blob,file_ref);await tx.objectStore('pins').put(pin);pins.push(pin);}
+ result={id:board.id,board,pins};
  }else if(a.type==='files.restore'){
  // Backfill image blobs that arrived after their pins; only files a pin references and that are still missing.
  const files=tx.objectStore('files');const refs=new Set((await tx.objectStore('pins').getAll()).map(x=>x.file_ref).filter(Boolean));let images=0;

@@ -26,3 +26,14 @@ describe('whole-library backup',()=>{
   await clear();await expect(importLibraryFiles(files)).rejects.toThrow('missing an image');expect(await (await database).count('boards')).toBe(0);
  });
 });
+describe('single-board ZIP import',()=>{
+ it('imports a board and its images in one step, and leaves nothing behind when an image is missing',async()=>{
+  const {zipSync,strToU8}=await import('fflate');const {importBoard}=await import('./backup');
+  const pins=[{id:'P1',meta:{kind:'image',title:'Wall'},note:'n',tags:['t'],palette:['#aabbcc'],source_url:'',source_credit:'Ann',file_ref:'F1',annotations:[]},{id:'P2',meta:{kind:'idea',title:''},note:'idea',tags:[],palette:[],source_url:'',source_credit:'',file_ref:null}];
+  const zip=(withImage:boolean)=>new Blob([zipSync({'board.json':strToU8(JSON.stringify({format:'studio-wall',version:1,board:{name:'Hall'},pins,mime:{F1:'image/webp'}})),...(withImage?{'images/F1':new Uint8Array([1,2,3])}:{})}) as BlobPart]);
+  const board=await importBoard(zip(true));const s=await snapshot();
+  expect(board.name).toBe('Hall (imported)');expect(s.pins.filter(p=>p.board_id===board.id).map(p=>p.source_credit).sort()).toEqual(['','Ann']);
+  const img=s.pins.find(p=>p.file_ref)!;expect(img.file_ref).not.toBe('F1');expect(await (await database).get('files',img.file_ref!)).toBeTruthy();
+  await clear();await expect(importBoard(zip(false))).rejects.toThrow();expect(await (await database).count('boards')).toBe(0);expect(await (await database).count('pins')).toBe(0);
+ });
+});
