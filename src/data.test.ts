@@ -50,3 +50,12 @@ it('keeps existing feedback when comments are disabled and rejects preview write
  await action({type:'feedback.add',payload:{board_id:b.id,text:'Now allowed',client_preview:true}});
  expect((await snapshot()).feedback).toHaveLength(2);
 });
+describe('multi-image upload',()=>{
+ it('saves every image of a batch or none of them',async()=>{
+  const b=await action({type:'board.create',payload:{name:'Batch'}});const db=await database;
+  const r=await action({type:'pin.save_batch',payload:{items:[{board_id:b.id,palette:['#aabbcc']},{board_id:b.id}]},blobs:{'0':new Blob(['a']),'1':new Blob(['b'])}});
+  expect(r.pins).toHaveLength(2);expect(await db.count('files')).toBe(2);
+  await expect(action({type:'pin.save_batch',payload:{items:[{board_id:b.id},{board_id:'missing'}]},blobs:{'0':new Blob(['c']),'1':new Blob(['d'])}})).rejects.toThrow('existing board');
+  expect(await db.count('pins')).toBe(2);expect(await db.count('files')).toBe(2);
+ });
+});

@@ -72,12 +72,18 @@ export async function action(a:Action){
  if(!['public','private','password'].includes(p.mode)||!['view','comment','contribute'].includes(p.permission))throw Error('Choose valid sharing settings.');
  result=await tx.objectStore('boards').get(a.id!);if(!result||result.deleted_at)throw Error('Board not found.');result={...result,share_settings:{mode:p.mode,permission:p.permission},updated_at:b.updated_at,version:result.version+1};await tx.objectStore('boards').put(result);
  }else if(a.type==='board.create'){if(!p.name?.trim())throw Error('Give your board a name.');result={...b,name:p.name.trim(),description:p.description||'',cover_pin_id:null,visibility:'private',position:(await tx.objectStore('boards').getAll()).length};await tx.objectStore('boards').put(result);}
- else if(a.type==='pin.save'){
- const board=await tx.objectStore('boards').get(p.board_id);if(!board||board.deleted_at)throw Error('Choose an existing board.');
- if(!a.blob&&!p.source_url&&!p.note?.trim())throw Error('Add an image, link or idea.');
- if(p.source_url&&!/^https?:\/\//i.test(p.source_url))throw Error('Use a complete http or https link.');
- result={...b,board_id:p.board_id,file_ref:a.blob?ulid():null,source_url:p.source_url||'',source_credit:p.source_credit||'',is_own:!!p.is_own,note:p.note||'',tags:p.tags||[],palette:p.palette||[],linked_type:null,linked_id:null,annotations:[],meta:{kind:a.blob?'image':p.source_url?'link':'idea',title:p.title||''}};
- if(a.blob)await tx.objectStore('files').put(a.blob,result.file_ref);await tx.objectStore('pins').put(result);
+ else if(a.type==='pin.save'||a.type==='pin.save_batch'){
+ // A batch (several images from one upload) saves every card or none.
+ const items:{payload:any;blob?:Blob}[]=a.type==='pin.save'?[{payload:p,blob:a.blob}]:Array.isArray(p.items)&&p.items.length&&p.items.length<=200?p.items.map((x:any,i:number)=>({payload:x,blob:a.blobs?.[String(i)]})):[];
+ if(!items.length)throw Error('Add an image, link or idea.');
+ const saved=[];
+ for(const {payload:q,blob} of items){
+  const board=await tx.objectStore('boards').get(q.board_id);if(!board||board.deleted_at)throw Error('Choose an existing board.');
+  if(!blob&&!q.source_url&&!q.note?.trim())throw Error('Add an image, link or idea.');
+  if(q.source_url&&!/^https?:\/\//i.test(q.source_url))throw Error('Use a complete http or https link.');
+  const pin={...base(),board_id:q.board_id,file_ref:blob?ulid():null,source_url:q.source_url||'',source_credit:q.source_credit||'',is_own:!!q.is_own,note:q.note||'',tags:q.tags||[],palette:q.palette||[],linked_type:null,linked_id:null,annotations:[],meta:{kind:blob?'image':q.source_url?'link':'idea',title:q.title||''}};
+  if(blob&&pin.file_ref)await tx.objectStore('files').put(blob,pin.file_ref);await tx.objectStore('pins').put(pin);saved.push(pin);}
+ result=a.type==='pin.save'?saved[0]:{id:saved[0].id,pins:saved};
  }else if(a.type==='feedback.star'){
  const board=await tx.objectStore('boards').get(p.board_id);const pin=await tx.objectStore('pins').get(p.pin_id);if(!board||board.deleted_at||!pin||pin.deleted_at||pin.board_id!==board.id)throw Error('Choose a reference in this board.');
  const existing=(await tx.objectStore('feedback').getAll()).find(f=>!f.deleted_at&&f.board_id===board.id&&f.pin_id===pin.id&&f.created_by===b.created_by&&typeof f.starred==='boolean');
