@@ -10,11 +10,11 @@ Updated: 2026-10-18. Start here in a new chat; no old conversation is needed.
 
 ## Latest update — colour-word search, atomic board import, upload checks, sync dot (2026-10-18)
 - Search matches plain colour words from each card's palette (`src/colour.ts`: red/orange/yellow/green/teal/blue/purple/pink/brown, grey/black/white, warm/cool/neutral, light/dark), in addition to notes, tags, credits and hex codes.
-- Single-board ZIP import is now one atomic `board.import` action (new IDs for board, cards and image refs; credits/notes/palettes/markup kept). A bad or incomplete ZIP leaves nothing behind. Closes the ZIP part of priority 6; multi-file image upload is still one action per image.
+- Single-board ZIP import is now one atomic `board.import` action (new IDs for board, cards and image refs; credits/notes/palettes/markup kept). A bad or incomplete ZIP leaves nothing behind. Multi-image upload now prepares every image first (button shows "Preparing n of N…") and saves them with one `pin.save_batch` action — all or none.
 - Worker uploads: stored content type comes from the file's magic bytes (`sniffImage`: JPEG/PNG/WebP/GIF/HEIC); anything else is rejected with 415. Client header is no longer trusted. Server-side re-encode/metadata stripping is still not done.
 - Phone header ⇄ button shows a sync dot (green synced, amber paused, pulsing while syncing; none when local-only) and its title carries the status text.
 - UI test stubs fetch (503) so tests no longer try to reach a sync server.
-- Validation: 29 tests (new colour.test.ts, single-board import atomicity, sniffImage) and build pass; wrangler dry-run OK. Not checked on a device.
+- Validation: 30 tests (new colour.test.ts, single-board import atomicity, sniffImage, batch upload all-or-none) and build pass; wrangler dry-run OK. Not checked on a device.
 
 ## Previous update — touch zoom + double-tap (2026-10-17, PR #2)
 - New `src/zoom.ts` (`bindTouchZoom`, `zoomAt`): two-finger pinch zoom (100–400%, anchored at the pinch midpoint), one-finger pan while zoomed, double-tap detection. Fitted images keep `touch-action: pan-y` so the detail view still scrolls; zoomed images take `touch-action: none`.
@@ -141,7 +141,7 @@ Eight data-layer tests and one DOM integration flow (nine tests total) cover tra
 3. Backend contract: studio identity, asset registry/file_ref, actor identity, API actions, outbox idempotency/revisions/conflicts, authorized image delivery. Do not send existing provisional events until migration semantics are settled.
 4. Client access: owner-selected full board or a curated subset (scope pins and media, never the whole collection); client stars, pin notes and an owner review of favorites. Revocable/expiring board links, server-enforced view/comment/contribute roles, guest identity, optional login. Comments and contributions must be scoped by board. Do not treat the preview UI as access control.
 5. Connect AI through the same authorized action endpoint. Never give an assistant direct database/bucket access.
-6. (Done 2026-10-18: colour-word search, atomic single-board ZIP import.) Remaining: make multi-file image upload one all-or-nothing batch before large-scale use. Soft-deleted blobs currently retained for future sync; design tombstone retention and cleanup.
+6. (Done 2026-10-18: colour-word search, atomic single-board ZIP import, all-or-nothing multi-image upload via `pin.save_batch`.) Soft-deleted blobs currently retained for future sync; design tombstone retention and cleanup.
 
 ## Useful commands
 npm ci; npm test; npm run build; npm run dev.
