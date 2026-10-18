@@ -8,9 +8,16 @@ Updated: 2026-10-18. Start here in a new chat; no old conversation is needed.
 - **Sync status:** PR #2 merged and deployed 2026-10-18; D1 shows pin updates arriving after the merge (seq 90, 2026-10-18 01:43 UTC). First live run (2026-10-17) — desktop uploaded 5 boards/~50 images, phone uploaded its own Inbox (7 images) + "Art Ideas", but the phone did not show desktop boards: one missing/undownloadable image aborted the whole strict merge. Fixed in PR #2 (lenient sync merge, image backfill, upload retry). **Still to confirm by the user: desktop boards + images now appear on the phone and phone items reach desktop.**
 - **Next smallest task:** user verifies desktop↔phone sync, zoom gestures, colour search and the phone sync dot on a real iPhone; fix anything found. After that: HANDOFF "Next priorities" (client share links, server-side image processing).
 
-## Latest update — colour-word search, atomic board import, upload checks, sync dot (2026-10-18)
+## Latest update — more image formats + all-or-nothing multi-upload (2026-10-18)
+- Formats: JPEG, PNG, WebP, GIF, BMP and AVIF decode natively where the browser supports them. HEIC/HEIF falls back to `heic2any` and TIFF to `utif` when the browser can't open the file (detected by magic bytes, `sniffFormat` in media.ts). Converters are lazy chunks (heic2any ≈340 KB gzip, UTIF ≈30 KB) loaded only on demand; main bundle ≈38 KB gzip. Everything is still normalised to WebP ≤2400 px before saving, so sync/R2 only ever receive WebP.
+- Picker accepts `image/*` plus .heic/.heif/.avif/.tif/.tiff/.bmp; drag/drop accepts files by extension when the browser reports no MIME type (common for HEIC on Windows/Chrome). iPhone's photo picker already converts HEIC to JPEG itself.
+- Multi-image upload prepares every image first ("Preparing n of N…") and saves them with one `pin.save_batch` action — all or none.
+- Validation: 32 tests (new media.test.ts for format sniffing/accept, batch upload all-or-none) and build pass. NOT verified with real HEIC/TIFF files in Chrome/Firefox — needs a real file test on desktop.
+- Deployment check: PR #3 deployed (worker modified 2026-10-18 03:18 UTC).
+
+## Previous update — colour-word search, atomic board import, upload checks, sync dot (2026-10-18)
 - Search matches plain colour words from each card's palette (`src/colour.ts`: red/orange/yellow/green/teal/blue/purple/pink/brown, grey/black/white, warm/cool/neutral, light/dark), in addition to notes, tags, credits and hex codes.
-- Single-board ZIP import is now one atomic `board.import` action (new IDs for board, cards and image refs; credits/notes/palettes/markup kept). A bad or incomplete ZIP leaves nothing behind. Multi-image upload now prepares every image first (button shows "Preparing n of N…") and saves them with one `pin.save_batch` action — all or none.
+- Single-board ZIP import is now one atomic `board.import` action (new IDs for board, cards and image refs; credits/notes/palettes/markup kept). A bad or incomplete ZIP leaves nothing behind. Multi-image upload: see the newer section above.
 - Worker uploads: stored content type comes from the file's magic bytes (`sniffImage`: JPEG/PNG/WebP/GIF/HEIC); anything else is rejected with 415. Client header is no longer trusted. Server-side re-encode/metadata stripping is still not done.
 - Phone header ⇄ button shows a sync dot (green synced, amber paused, pulsing while syncing; none when local-only) and its title carries the status text.
 - UI test stubs fetch (503) so tests no longer try to reach a sync server.
