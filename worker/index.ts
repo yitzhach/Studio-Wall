@@ -20,6 +20,16 @@ async function identity(req:Request,env:Env):Promise<string|null>{
  const ok=await crypto.subtle.verify('RSASSA-PKCS1-v1_5',key,b64url(s),new TextEncoder().encode(h+'.'+p));
  return ok?claims.email.toLowerCase():null;
 }
+/** Recognise real image files by their leading bytes (magic numbers). */
+export function sniffImage(b:Uint8Array):string|null{
+ const ascii=(from:number,to:number)=>String.fromCharCode(...b.slice(from,to));
+ if(b[0]===0xff&&b[1]===0xd8&&b[2]===0xff)return 'image/jpeg';
+ if(b[0]===0x89&&ascii(1,4)==='PNG')return 'image/png';
+ if(ascii(0,4)==='RIFF'&&ascii(8,12)==='WEBP')return 'image/webp';
+ if(ascii(0,4)==='GIF8')return 'image/gif';
+ if(ascii(4,8)==='ftyp'&&['heic','heix','hevc','heif','mif1','msf1'].includes(ascii(8,12)))return 'image/heic';
+ return null;
+}
 export function validRecord(kind:string,r:any){
  if(!KINDS.includes(kind)||!r||!ID.test(r.id)||typeof r.updated_at!=='string'||isNaN(Date.parse(r.updated_at)))return false;
  if(kind!=='boards'&&!ID.test(r.board_id))return false;
@@ -51,8 +61,9 @@ async function api(req:Request,env:Env,url:URL){
  if(file){const key=owner+'/'+file[1];
   if(req.method==='HEAD'){const o=await env.FILES.head(key);return new Response(null,{status:o?200:404});}
   if(req.method==='GET'){const o=await env.FILES.get(key);if(!o)return json({error:'Not found.'},404);return new Response(o.body,{headers:{'content-type':o.httpMetadata?.contentType||'application/octet-stream','cache-control':'private, max-age=31536000, immutable'}});}
-  if(req.method==='PUT'){const type=req.headers.get('content-type')||'';if(!/^image\/(webp|jpeg|png|gif|heic|heif)$/.test(type))return json({error:'Images only.'},415);
-   const bytes=await req.arrayBuffer();if(!bytes.byteLength||bytes.byteLength>MAX_FILE)return json({error:'Image too large.'},413);
+  if(req.method==='PUT'){const bytes=await req.arrayBuffer();if(!bytes.byteLength||bytes.byteLength>MAX_FILE)return json({error:'Image too large.'},413);
+   // The stored type comes from the file's own bytes, never the client's header.
+   const type=sniffImage(new Uint8Array(bytes,0,Math.min(16,bytes.byteLength)));if(!type)return json({error:'Images only.'},415);
    await env.FILES.put(key,bytes,{httpMetadata:{contentType:type}});return json({ok:true});}
  }
  return json({error:'Not found.'},404);
