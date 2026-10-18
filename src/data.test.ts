@@ -59,3 +59,28 @@ describe('multi-image upload',()=>{
   expect(await db.count('pins')).toBe(2);expect(await db.count('files')).toBe(2);
  });
 });
+describe('recently deleted',()=>{
+ it('restores a card or a whole board within 30 days, and returns orphaned cards to the Inbox',async()=>{
+  const inbox=await action({type:'board.create',payload:{name:'Inbox'}});const b=await action({type:'board.create',payload:{name:'Kitchen'}});
+  const p1=await action({type:'pin.save',payload:{board_id:b.id,note:'one'}});const p2=await action({type:'pin.save',payload:{board_id:b.id,note:'two'}});
+  await action({type:'pin.delete',id:p1.id});await new Promise(r=>setTimeout(r,5));await action({type:'board.delete',id:b.id});
+  const {recentlyDeleted}=await import('./data');let bin=await recentlyDeleted();
+  expect(bin.boards.map(x=>[x.board.name,x.count])).toEqual([['Kitchen',1]]);expect(bin.pins.map(p=>p.note)).toEqual(['one']);
+  await action({type:'pin.restore',id:p1.id});expect((await snapshot()).pins.find(p=>p.id===p1.id)!.board_id).toBe(inbox.id);
+  await action({type:'board.restore',id:b.id});const s=await snapshot();expect(s.boards.some(x=>x.id===b.id)).toBe(true);expect(s.pins.find(p=>p.id===p2.id)!.board_id).toBe(b.id);
+  bin=await recentlyDeleted();expect(bin.boards).toHaveLength(0);expect(bin.pins).toHaveLength(0);
+ });
+ it('removes only image files of cards deleted over 30 days ago that no other card uses',async()=>{
+  const b=await action({type:'board.create',payload:{name:'Old'}});const db=await database;
+  const shared=await action({type:'pin.save',payload:{board_id:b.id},blob:new Blob(['s'])});const copy=await action({type:'pin.batch',payload:{operation:'copy',ids:[shared.id],board_id:b.id}});
+  const lone=await action({type:'pin.save',payload:{board_id:b.id},blob:new Blob(['l'])});const recent=await action({type:'pin.save',payload:{board_id:b.id},blob:new Blob(['r'])});
+  const old=new Date(Date.now()-40*86400_000).toISOString();
+  for(const id of [shared.id,lone.id])await db.put('pins',{...(await db.get('pins',id)),deleted_at:old});
+  await action({type:'pin.delete',id:recent.id});
+  const outbox=await db.count('outbox');const r=await action({type:'files.purge',payload:{},recordHistory:false});
+  expect(r.counts.images).toBe(1);expect(await db.get('files',lone.file_ref)).toBeUndefined();
+  expect(await db.get('files',shared.file_ref)).toBeTruthy();expect(copy.pins[0].file_ref).toBe(shared.file_ref);expect(await db.get('files',recent.file_ref)).toBeTruthy();
+  expect(await db.count('outbox')).toBe(outbox+1);await action({type:'files.purge',payload:{},recordHistory:false});expect(await db.count('outbox')).toBe(outbox+1);
+  await expect(action({type:'pin.restore',id:lone.id})).rejects.toThrow('too long ago');
+ });
+});
