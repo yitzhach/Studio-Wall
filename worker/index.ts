@@ -3,6 +3,8 @@
 // Client share routes (/s/<token>, /api/s/<token>/…) are public by design: the random token is the credential, and the
 // server decides what it exposes (one board, its live cards and images; never notes on images, tags or other boards).
 // Without ACCESS_TEAM_DOMAIN, ACCESS_AUD, DB and FILES configured, the API refuses requests (fail closed).
+// Images lose their hidden metadata (GPS, camera, dates) when stored, and again when a client link serves them.
+import {stripMetadata} from './strip';
 type Env={ASSETS:{fetch(r:Request):Promise<Response>};DB?:any;FILES?:any;ACCESS_TEAM_DOMAIN?:string;ACCESS_AUD?:string};
 type Ctx={waitUntil(p:Promise<unknown>):void};
 const KINDS=['boards','pins','feedback'];
@@ -98,7 +100,7 @@ async function capture(req:Request,env:Env,url:URL,owner:string){
  }else{
   const bytes=await req.arrayBuffer();if(!bytes.byteLength||bytes.byteLength>MAX_FILE)return json({error:'Image too large (25 MB max).'},413);
   const kind=sniffImage(new Uint8Array(bytes,0,Math.min(16,bytes.byteLength)));if(!kind)return json({error:'Images only.'},415);
-  pin.file_ref=newId();await env.FILES.put(owner+'/'+pin.file_ref,bytes,{httpMetadata:{contentType:kind}});
+  pin.file_ref=newId();await env.FILES.put(owner+'/'+pin.file_ref,stripMetadata(new Uint8Array(bytes),kind),{httpMetadata:{contentType:kind}});
   const src=text(url.searchParams.get('source'),2000);pin.source_url=/^https?:\/\//i.test(src)?src:'';pin.meta={kind:'image',title:text(url.searchParams.get('title'),200)};pin.source_credit=text(url.searchParams.get('credit'),200);
  }
  await putRecords(env,owner,[{kind:'pins',data:pin}]);
@@ -147,7 +149,7 @@ async function ownerApi(req:Request,env:Env,url:URL,ctx:Ctx){
   if(req.method==='PUT'){const bytes=await req.arrayBuffer();if(!bytes.byteLength||bytes.byteLength>MAX_FILE)return json({error:'Image too large.'},413);
    // The stored type comes from the file's own bytes, never the client's header.
    const type=sniffImage(new Uint8Array(bytes,0,Math.min(16,bytes.byteLength)));if(!type)return json({error:'Images only.'},415);
-   await env.FILES.put(key,bytes,{httpMetadata:{contentType:type}});await env.DB.prepare('DELETE FROM purged_files WHERE owner=? AND ref=?').bind(owner,file[1]).run();return json({ok:true});}
+   await env.FILES.put(key,stripMetadata(new Uint8Array(bytes),type),{httpMetadata:{contentType:type}});await env.DB.prepare('DELETE FROM purged_files WHERE owner=? AND ref=?').bind(owner,file[1]).run();return json({ok:true});}
  }
  return json({error:'Not found.'},404);
 }
@@ -177,7 +179,9 @@ async function shareApi(req:Request,env:Env,url:URL,token:string,rest:string){
  if(file&&req.method==='GET'){
   const ok=await env.DB.prepare("SELECT 1 FROM records WHERE owner=? AND kind='pins' AND json_extract(data,'$.board_id')=? AND json_extract(data,'$.file_ref')=? AND json_extract(data,'$.deleted_at') IS NULL LIMIT 1").bind(share.owner,share.board_id,file[1]).first();
   if(!ok)return json({error:'Not found.'},404);const o=await env.FILES.get(share.owner+'/'+file[1]);if(!o)return json({error:'Not found.'},404);
-  return new Response(o.body,{headers:{'content-type':o.httpMetadata?.contentType||'application/octet-stream','cache-control':'private, max-age=600'}});
+  // Stripped again on the way out: images stored before stripping existed may still carry a location.
+  const type=o.httpMetadata?.contentType||'application/octet-stream';
+  return new Response(stripMetadata(new Uint8Array(await o.arrayBuffer()),type),{headers:{'content-type':type,'cache-control':'private, max-age=600'}});
  }
  if(rest==='/feedback'&&req.method==='POST'){
   if(share.permission!=='comment')return json({error:'This link is view only.'},403);
