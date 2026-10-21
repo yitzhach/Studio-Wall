@@ -12,7 +12,7 @@ const store={get:(k:string)=>{try{return localStorage.getItem(k);}catch{return n
 // An anonymous per-browser id lets a client toggle their own stars; it is not an account and grants nothing by itself.
 const guest=store.get('studio-wall-guest')||(()=>{const g=crypto.randomUUID().replace(/-/g,'');store.set('studio-wall-guest',g);return g;})();
 document.documentElement.dataset.theme=store.get('studio-wall-theme')||'dark';
-const api=async(path:string,init:RequestInit={})=>{const r=await fetch(`/api/s/${token}${path}`,{...init,headers:{'x-guest-id':guest,...(init.body?{'content-type':'application/json'}:{}),...init.headers}});const body=await r.json().catch(()=>({}));if(!r.ok)throw Error(body.error||'Something went wrong. Please try again.');return body;};
+const api=async(path:string,init:RequestInit={})=>{const r=await fetch(`/api/s/${token}${path}`,{...init,headers:{'x-guest-id':guest,...(init.body?{'content-type':'application/json'}:{}),...init.headers}});const body=await r.json().catch(()=>({}));if(!r.ok)throw Object.assign(Error(body.error||'Something went wrong. Please try again.'),{password:body.password===true});return body;};
 const src=(p:SharedPin)=>p.file_ref?`/api/s/${token}/files/${p.file_ref}`:null;
 let data:Shared,about:string|null=null;
 
@@ -41,5 +41,13 @@ function bind(){
   try{const {comment}=await api('/feedback',{method:'POST',body:JSON.stringify({pin_id:about,text:v.text,name:v.name})});data.comments.push(comment);about=null;render();}
   catch(err){form.querySelector('.error')!.textContent=(err as Error).message;btn.disabled=false;}};
 }
-async function load(){try{data=await api('');render();}catch(e){root.innerHTML=`<header class="share-head"><div class="eyebrow">STUDIO WALL</div><h1>This link isn’t available</h1><p class="intro">${esc((e as Error).message)} Ask the artist for a new link.</p></header>`;}}
+// A password link: the server answers 401 until /unlock sets its cookie, which the page and its images then send.
+function askPassword(){
+ root.innerHTML=`<header class="share-head"><div class="eyebrow">A BOARD SHARED WITH YOU</div><h1>This board has a password</h1><p class="intro">Enter the password the artist gave you.</p><form id="unlock-form" class="share-unlock"><label>Password<input name="password" type="password" autocomplete="current-password" required maxlength="200" autofocus></label><p class="error" role="alert"></p><button class="primary">Open board</button></form></header>`;
+ const form=root.querySelector<HTMLFormElement>('#unlock-form')!;
+ form.onsubmit=async e=>{e.preventDefault();const btn=form.querySelector('button')!;btn.disabled=true;
+  try{await api('/unlock',{method:'POST',body:JSON.stringify({password:new FormData(form).get('password')})});await load();}
+  catch(err){form.querySelector('.error')!.textContent=(err as Error).message;btn.disabled=false;}};
+}
+async function load(){try{data=await api('');render();}catch(e){if((e as {password?:boolean}).password)return askPassword();root.innerHTML=`<header class="share-head"><div class="eyebrow">STUDIO WALL</div><h1>This link isn’t available</h1><p class="intro">${esc((e as Error).message)} Ask the artist for a new link.</p></header>`;}}
 load();

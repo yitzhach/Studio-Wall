@@ -6,7 +6,9 @@ The site is behind Cloudflare Access (your email login). Client links and the iP
 
 **How it works.** In a board, tap **Collaborate → Create client link**. Choose *View, star and comment* or *View only*, and when the link expires (7, 30 or 90 days, or never). The link (`/s/<random token>`) opens that one board only: its live images, titles and credits. Image notes, tags, markup, deleted cards and other boards are never sent. Hidden photo data (GPS location, camera, dates) is removed from images before clients see them. Links can be turned off at any time from the same dialog, and turning off **Allow client comments** makes every link of that board view only. Client stars and comments appear in your app, with the client's name, through sync. Link previews in iMessage, email and social apps show the board name and cover image.
 
-Anyone holding an active link can open it, and it can be forwarded, so use an expiry date and turn links off when a project ends. Password-protected links and invitations for specific people are not built yet.
+Anyone holding an active link can open it, and it can be forwarded, so use an expiry date and turn links off when a project ends.
+
+**Password (optional).** Type a password (at least 8 characters) when creating the link, and send it to the client separately, for example by text. The client types it once per device; the browser then stays unlocked for 30 days or until the link expires. Ten wrong tries lock that connection out for 15 minutes. The password is stored only as a one-way hash, so it can't be shown again; to change it, turn the link off and create a new one. A password link's preview in iMessage or email shows only "Studio Wall", not the board name or cover image. Invitations for specific people (by email) are not built yet.
 
 **One-time Cloudflare step (required before links open for clients):**
 1. Zero Trust → Access controls → Applications → **Create new application** → Self-hosted. Name it "Studio Wall client links".
