@@ -8,6 +8,8 @@ The site is behind Cloudflare Access (your email login). Client links and the iP
 
 Anyone holding an active link can open it, and it can be forwarded, so use an expiry date and turn links off when a project ends.
 
+**Only some cards.** In a board, tap **Select**, choose the cards, then **Share selected**. That link shows only those cards, their images and the comments on them (plus comments on the whole board). Your other cards stay private. A chosen card you delete or move to another board drops out of the link. The link list says how many cards each such link holds.
+
 **Password (optional).** Type a password (at least 8 characters) when creating the link, and send it to the client separately, for example by text. The client types it once per device; the browser then stays unlocked for 30 days or until the link expires. Ten wrong tries lock that connection out for 15 minutes. The password is stored only as a one-way hash, so it can't be shown again; to change it, turn the link off and create a new one. A password link's preview in iMessage or email shows only "Studio Wall", not the board name or cover image. Invitations for specific people (by email) are not built yet.
 
 **One-time Cloudflare step (required before links open for clients):**

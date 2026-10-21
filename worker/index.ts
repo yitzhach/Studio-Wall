@@ -2,6 +2,7 @@
 // Owner routes: identity comes from Cloudflare Access (email login, or an Access service token for the iPhone Shortcut).
 // Client share routes (/s/<token>, /api/s/<token>/…) are public by design: the random token is the credential, and the
 // server decides what it exposes (one board, its live cards and images; never notes on images, tags or other boards).
+// A link may cover only chosen cards of its board (shares.pin_ids); then everything it serves is limited to those cards.
 // A link with a password also needs an unlock cookie, issued by /api/s/<token>/unlock and scoped to that link's API path.
 // Without ACCESS_TEAM_DOMAIN, ACCESS_AUD, DB and FILES configured, the API refuses requests (fail closed).
 // Images lose their hidden metadata (GPS, camera, dates) when stored, and again when a client link serves them.
@@ -83,8 +84,8 @@ const SCHEMA=[
  'CREATE INDEX IF NOT EXISTS share_attempts_at ON share_attempts(token,ip,at)'];
 let ready=false;
 async function ensureSchema(env:Env){if(!ready){await env.DB.batch(SCHEMA.map(s=>env.DB.prepare(s)));
- // shares predates passwords; the column is added once (an existing column makes ALTER fail, which is fine).
- await env.DB.prepare('ALTER TABLE shares ADD COLUMN password TEXT').run().catch(()=>{});ready=true;}}
+ // shares predates passwords and chosen cards; each column is added once (an existing column makes ALTER fail, which is fine).
+ for(const column of ['password TEXT','pin_ids TEXT'])await env.DB.prepare('ALTER TABLE shares ADD COLUMN '+column).run().catch(()=>{});ready=true;}}
 // Newest updated_at wins; each accepted write gets the next sequence number so devices can pull "everything after N".
 const UPSERT='INSERT INTO records(owner,kind,id,updated_at,seq,data) VALUES(?1,?2,?3,?4,(SELECT COALESCE(MAX(seq),0)+1 FROM records WHERE owner=?1),?5) ON CONFLICT(owner,kind,id) DO UPDATE SET updated_at=excluded.updated_at,seq=excluded.seq,data=excluded.data WHERE excluded.updated_at>records.updated_at';
 const putRecords=(env:Env,owner:string,list:{kind:string;data:any}[])=>list.length?env.DB.batch(list.map(x=>env.DB.prepare(UPSERT).bind(owner,x.kind,x.data.id,x.data.updated_at,JSON.stringify(x.data)))):Promise.resolve();
@@ -153,14 +154,20 @@ async function ownerApi(req:Request,env:Env,url:URL,ctx:Ctx){
   if(!Array.isArray(list)||list.length>MAX_BATCH||!list.every((x:any)=>validRecord(x?.kind,x?.data)))return json({error:'Invalid records.'},400);
   await putRecords(env,owner,list);return json({ok:true});
  }
- if(url.pathname==='/api/shares'&&req.method==='GET'){const {results}=await env.DB.prepare('SELECT token,board_id,permission,created_at,expires_at,password IS NOT NULL locked FROM shares WHERE owner=? AND revoked_at IS NULL ORDER BY created_at DESC').bind(owner).all();return json({shares:results.map((r:any)=>({...r,locked:!!r.locked}))});}
+ if(url.pathname==='/api/shares'&&req.method==='GET'){const {results}=await env.DB.prepare('SELECT token,board_id,permission,created_at,expires_at,password IS NOT NULL locked,json_array_length(pin_ids) pin_count FROM shares WHERE owner=? AND revoked_at IS NULL ORDER BY created_at DESC').bind(owner).all();return json({shares:results.map((r:any)=>({...r,locked:!!r.locked}))});}
  if(url.pathname==='/api/shares'&&req.method==='POST'){
   const body=await req.json().catch(()=>null) as any;if(!body||!ID.test(body.board_id)||!['view','comment'].includes(body.permission))return json({error:'Choose a board and what the client can do.'},400);
   const board=await record(env,owner,'boards',body.board_id);if(!board||board.deleted_at)return json({error:'This board has not synced yet. Wait a moment and try again.'},409);
   const days=Number(body.expires_days)||0;const expires=days>0&&days<=365?new Date(Date.now()+days*86400_000).toISOString():null;
   const password=typeof body.password==='string'?body.password:'';if(password&&(password.length<8||password.length>200))return json({error:'Use a password of at least 8 characters.'},400);
-  const share={token:randomToken(),board_id:body.board_id,permission:body.permission,created_at:new Date().toISOString(),expires_at:expires,locked:!!password};
-  await env.DB.prepare('INSERT INTO shares(token,owner,board_id,permission,created_at,expires_at,password) VALUES(?,?,?,?,?,?,?)').bind(share.token,owner,share.board_id,share.permission,share.created_at,share.expires_at,password?await hashPassword(password):null).run();
+  let only:string[]|null=null;
+  if(body.pin_ids!==undefined){
+   if(!Array.isArray(body.pin_ids)||!body.pin_ids.length||body.pin_ids.length>500||!body.pin_ids.every((id:unknown)=>typeof id==='string'&&ID.test(id)))return json({error:'Choose the cards to share.'},400);
+   const live=new Set((await boardPins(env,owner,body.board_id)).map((p:any)=>p.id));only=[...new Set<string>(body.pin_ids)].filter(id=>live.has(id));
+   if(!only.length)return json({error:'Those cards have not synced yet. Wait a moment and try again.'},409);
+  }
+  const share={token:randomToken(),board_id:body.board_id,permission:body.permission,created_at:new Date().toISOString(),expires_at:expires,locked:!!password,pin_count:only?only.length:null};
+  await env.DB.prepare('INSERT INTO shares(token,owner,board_id,permission,created_at,expires_at,password,pin_ids) VALUES(?,?,?,?,?,?,?,?)').bind(share.token,owner,share.board_id,share.permission,share.created_at,share.expires_at,password?await hashPassword(password):null,only?JSON.stringify(only):null).run();
   return json({share});
  }
  const revoke=url.pathname.match(/^\/api\/shares\/([A-Za-z0-9_-]{32,64})$/);
@@ -184,7 +191,7 @@ async function openShare(env:Env,token:string){
  if(!share||share.revoked_at||(share.expires_at&&Date.parse(share.expires_at)<Date.now()))return null;
  const board=await record(env,share.owner,'boards',share.board_id);if(!board||board.deleted_at)return null;
  // A board with comments turned off is view-only for every link.
- return {...share,board,permission:board.comments_enabled===false?'view':share.permission};
+ return {...share,board,permission:board.comments_enabled===false?'view':share.permission,only:share.pin_ids?new Set<string>(JSON.parse(share.pin_ids)):null};
 }
 const unlockCookie=(req:Request)=>req.headers.get('cookie')?.match(/(?:^|;\s*)sw_link=([A-Za-z0-9_-]{32})/)?.[1]||null;
 async function unlocked(req:Request,env:Env,token:string){const id=unlockCookie(req);return !!id&&!!await env.DB.prepare('SELECT 1 FROM share_sessions WHERE id=? AND token=? AND expires_at>?').bind(id,token,new Date().toISOString()).first();}
@@ -199,23 +206,27 @@ async function unlock(req:Request,env:Env,share:any){
  await env.DB.prepare('INSERT INTO share_sessions(id,token,expires_at) VALUES(?,?,?)').bind(id,share.token,new Date(until).toISOString()).run();
  const res=json({ok:true});res.headers.append('set-cookie',`sw_link=${id}; Path=/api/s/${share.token}; Max-Age=${Math.max(1,Math.floor((until-Date.now())/1000))}; HttpOnly; Secure; SameSite=Lax`);return res;
 }
+/** The cards a link shows: the board's live cards, narrowed to the chosen ones when the link has a selection. */
+const inShare=(share:any,pinId:string|null)=>!share.only||(!!pinId&&share.only.has(pinId));
+const sharedPins=async(env:Env,share:any)=>(await boardPins(env,share.owner,share.board_id)).filter((p:any)=>inShare(share,p.id));
 const guestId=(req:Request)=>{const g=req.headers.get('x-guest-id')||'';return /^[A-Za-z0-9_-]{16,64}$/.test(g)?g:null;};
 
 async function shareApi(req:Request,env:Env,url:URL,token:string,rest:string){
  const share=await openShare(env,token);if(!share)return json({error:'This link is no longer active.'},404);
  if(share.password){if(rest==='/unlock'&&req.method==='POST')return unlock(req,env,share);if(!await unlocked(req,env,token))return json({error:'This board needs a password.',password:true},401);}
  if(rest===''&&req.method==='GET'){
-  const pins=await boardPins(env,share.owner,share.board_id);const g=guestId(req);
+  const pins=await sharedPins(env,share);const g=guestId(req);
   const {results}=await env.DB.prepare("SELECT data FROM records WHERE owner=? AND kind='feedback' AND json_extract(data,'$.board_id')=? AND json_extract(data,'$.deleted_at') IS NULL").bind(share.owner,share.board_id).all();
-  const feedback=results.map((r:any)=>JSON.parse(r.data));
+  // Board-wide comments always show; comments and stars on cards outside a selection never do.
+  const feedback=results.map((r:any)=>JSON.parse(r.data)).filter((f:any)=>!f.pin_id||inShare(share,f.pin_id));
   return json({board:{name:share.board.name,description:share.board.description||''},permission:share.permission,expires_at:share.expires_at,pins:pins.map(publicPin),
    comments:feedback.filter((f:any)=>f.text).sort((a:any,b:any)=>String(a.created_at).localeCompare(String(b.created_at))).map((f:any)=>({id:f.id,pin_id:f.pin_id||null,text:f.text,author:f.author_name||(String(f.created_by).startsWith('guest:')?'Client':'Artist'),created_at:f.created_at})),
    starred:g?feedback.filter((f:any)=>f.starred===true&&f.created_by==='guest:'+g).map((f:any)=>f.pin_id):[]});
  }
  const file=rest.match(/^\/files\/([0-9A-Za-z_-]{1,64})$/);
  if(file&&req.method==='GET'){
-  const ok=await env.DB.prepare("SELECT 1 FROM records WHERE owner=? AND kind='pins' AND json_extract(data,'$.board_id')=? AND json_extract(data,'$.file_ref')=? AND json_extract(data,'$.deleted_at') IS NULL LIMIT 1").bind(share.owner,share.board_id,file[1]).first();
-  if(!ok)return json({error:'Not found.'},404);const o=await env.FILES.get(share.owner+'/'+file[1]);if(!o)return json({error:'Not found.'},404);
+  const {results:users}=await env.DB.prepare("SELECT id FROM records WHERE owner=? AND kind='pins' AND json_extract(data,'$.board_id')=? AND json_extract(data,'$.file_ref')=? AND json_extract(data,'$.deleted_at') IS NULL").bind(share.owner,share.board_id,file[1]).all();
+  if(!users.some((r:any)=>inShare(share,r.id)))return json({error:'Not found.'},404);const o=await env.FILES.get(share.owner+'/'+file[1]);if(!o)return json({error:'Not found.'},404);
   // Stripped again on the way out: images stored before stripping existed may still carry a location.
   const type=o.httpMetadata?.contentType||'application/octet-stream';
   return new Response(stripMetadata(new Uint8Array(await o.arrayBuffer()),type),{headers:{'content-type':type,'cache-control':'private, max-age=600'}});
@@ -225,7 +236,7 @@ async function shareApi(req:Request,env:Env,url:URL,token:string,rest:string){
   const g=guestId(req);if(!g)return json({error:'Reload the page and try again.'},400);
   const body=await req.json().catch(()=>null) as any;if(!body)return json({error:'Nothing to send.'},400);
   const pinId=body.pin_id?String(body.pin_id):null;
-  if(pinId){const p=await record(env,share.owner,'pins',pinId);if(!p||p.deleted_at||p.board_id!==share.board_id)return json({error:'That image is no longer on this board.'},404);}
+  if(pinId){const p=await record(env,share.owner,'pins',pinId);if(!p||p.deleted_at||p.board_id!==share.board_id||!inShare(share,pinId))return json({error:'That image is no longer on this board.'},404);}
   const recent=await env.DB.prepare("SELECT COUNT(*) n FROM records WHERE owner=? AND kind='feedback' AND json_extract(data,'$.created_by')=? AND updated_at>?").bind(share.owner,'guest:'+g,new Date(Date.now()-3600_000).toISOString()).first() as any;
   if(recent&&recent.n>=60)return json({error:'Too many messages — please wait a little.'},429);
   const now=new Date().toISOString(),name=String(body.name||'').trim().slice(0,60)||'Client';
@@ -249,7 +260,7 @@ async function sharePage(req:Request,env:Env,url:URL,token:string){
  let tags='<meta property="og:title" content="Studio Wall"><meta property="og:description" content="A shared mood board">';
  if(env.DB){const share=await openShare(env,token).catch(()=>null);
   // A password link's preview names nothing: no board name, description or cover image.
-  if(share&&!share.password){const pins=await boardPins(env,share.owner,share.board_id);const cover=pins.find((p:any)=>p.id===share.board.cover_pin_id&&p.file_ref)||pins.find((p:any)=>p.file_ref);
+  if(share&&!share.password){const pins=await sharedPins(env,share);const cover=pins.find((p:any)=>p.id===share.board.cover_pin_id&&p.file_ref)||pins.find((p:any)=>p.file_ref);
    tags=`<meta property="og:title" content="${esc(share.board.name)}"><meta property="og:description" content="${esc(share.board.description||`${pins.length} reference${pins.length===1?'':'s'} · shared from Studio Wall`)}"><meta property="og:type" content="website"><meta property="og:url" content="${esc(url.origin+url.pathname)}">${cover?`<meta property="og:image" content="${esc(`${url.origin}/api/s/${token}/files/${cover.file_ref}`)}"><meta name="twitter:card" content="summary_large_image">`:''}<title>${esc(share.board.name)} · Studio Wall</title>`;}}
  html=html.replace('<!--share-meta-->',tags);
  return new Response(html,{headers:{'content-type':'text/html;charset=UTF-8','cache-control':'no-store','referrer-policy':'no-referrer','x-robots-tag':'noindex'}});

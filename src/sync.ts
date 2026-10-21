@@ -65,9 +65,9 @@ export function startSync(onRemote:()=>void){
 }
 
 // Client share links (owner side). Links are created and enforced by the server; they need sync to be on.
-export type Share={token:string;board_id:string;permission:'view'|'comment';created_at:string;expires_at:string|null;locked?:boolean};
+export type Share={token:string;board_id:string;permission:'view'|'comment';created_at:string;expires_at:string|null;locked?:boolean;pin_count?:number|null};
 export const shareUrl=(token:string)=>`${location.origin}/s/${token}`;
 export async function listShares():Promise<Share[]>{return (await (await api('/api/shares')).json()).shares;}
-export async function createShare(board_id:string,permission:'view'|'comment',expires_days:number,password=''):Promise<Share>{
- const r=await api('/api/shares',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({board_id,permission,expires_days,...(password?{password}:{})})});return (await r.json()).share;}
+export async function createShare(board_id:string,permission:'view'|'comment',expires_days:number,password='',pin_ids:string[]=[]):Promise<Share>{
+ const r=await api('/api/shares',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({board_id,permission,expires_days,...(password?{password}:{}),...(pin_ids.length?{pin_ids}:{})})});return (await r.json()).share;}
 export async function revokeShare(token:string){await api('/api/shares/'+token,{method:'DELETE'});}
