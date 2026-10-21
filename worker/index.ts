@@ -2,6 +2,7 @@
 // Owner routes: identity comes from Cloudflare Access (email login, or an Access service token for the iPhone Shortcut).
 // Client share routes (/s/<token>, /api/s/<token>/…) are public by design: the random token is the credential, and the
 // server decides what it exposes (one board, its live cards and images; never notes on images, tags or other boards).
+// A link with a password also needs an unlock cookie, issued by /api/s/<token>/unlock and scoped to that link's API path.
 // Without ACCESS_TEAM_DOMAIN, ACCESS_AUD, DB and FILES configured, the API refuses requests (fail closed).
 type Env={ASSETS:{fetch(r:Request):Promise<Response>};DB?:any;FILES?:any;ACCESS_TEAM_DOMAIN?:string;ACCESS_AUD?:string};
 type Ctx={waitUntil(p:Promise<unknown>):void};
@@ -53,15 +54,35 @@ export function publicPin(p:any){
  return {id:p.id,file_ref:p.file_ref||null,meta:{kind,title:String(p.meta?.title||'')},source_credit:p.is_own?'':String(p.source_credit||''),is_own:!!p.is_own,source_url:kind==='link'?String(p.source_url||''):'',note:kind==='image'?'':String(p.note||''),palette:Array.isArray(p.palette)?p.palette:[],created_at:p.created_at};
 }
 
+// Link passwords: PBKDF2-SHA256, 16-byte salt, stored as pbkdf2$rounds$salt$hash. 20,000 rounds is about 4 ms of CPU, inside
+// the Workers Free plan's 10 ms per request (100,000 measured about 18 ms). Guessing also needs the link itself and is rate limited.
+const ROUNDS=20_000,LOCKOUT=10,LOCKOUT_MS=15*60_000,UNLOCK_DAYS=30;
+const b64=(b:Uint8Array)=>btoa(String.fromCharCode(...b));
+async function pbkdf2(password:string,salt:Uint8Array<ArrayBuffer>,rounds:number){
+ const key=await crypto.subtle.importKey('raw',new TextEncoder().encode(password),'PBKDF2',false,['deriveBits']);
+ return new Uint8Array(await crypto.subtle.deriveBits({name:'PBKDF2',hash:'SHA-256',salt,iterations:rounds},key,256));
+}
+export async function hashPassword(password:string){const salt=crypto.getRandomValues(new Uint8Array(16));return `pbkdf2$${ROUNDS}$${b64(salt)}$${b64(await pbkdf2(password,salt,ROUNDS))}`;}
+export async function checkPassword(password:string,stored:string){
+ const [kind,rounds,salt,hash]=stored.split('$');if(kind!=='pbkdf2'||!hash)return false;
+ const got=await pbkdf2(password,Uint8Array.from(atob(salt),c=>c.charCodeAt(0)),Number(rounds)),want=Uint8Array.from(atob(hash),c=>c.charCodeAt(0));
+ let diff=got.length^want.length;for(let i=0;i<got.length;i++)diff|=got[i]^(want[i]??0);return diff===0;
+}
+
 const SCHEMA=[
  'CREATE TABLE IF NOT EXISTS records(owner TEXT NOT NULL,kind TEXT NOT NULL,id TEXT NOT NULL,updated_at TEXT NOT NULL,seq INTEGER NOT NULL,data TEXT NOT NULL,PRIMARY KEY(owner,kind,id))',
  'CREATE INDEX IF NOT EXISTS records_seq ON records(owner,seq)',
  'CREATE TABLE IF NOT EXISTS shares(token TEXT PRIMARY KEY,owner TEXT NOT NULL,board_id TEXT NOT NULL,permission TEXT NOT NULL,created_at TEXT NOT NULL,expires_at TEXT,revoked_at TEXT)',
  'CREATE INDEX IF NOT EXISTS shares_owner ON shares(owner,board_id)',
  'CREATE TABLE IF NOT EXISTS purged_files(owner TEXT NOT NULL,ref TEXT NOT NULL,PRIMARY KEY(owner,ref))',
- 'CREATE TABLE IF NOT EXISTS meta(key TEXT PRIMARY KEY,value TEXT NOT NULL)'];
+ 'CREATE TABLE IF NOT EXISTS meta(key TEXT PRIMARY KEY,value TEXT NOT NULL)',
+ 'CREATE TABLE IF NOT EXISTS share_sessions(id TEXT PRIMARY KEY,token TEXT NOT NULL,expires_at TEXT NOT NULL)',
+ 'CREATE TABLE IF NOT EXISTS share_attempts(token TEXT NOT NULL,ip TEXT NOT NULL,at TEXT NOT NULL)',
+ 'CREATE INDEX IF NOT EXISTS share_attempts_at ON share_attempts(token,ip,at)'];
 let ready=false;
-async function ensureSchema(env:Env){if(!ready){await env.DB.batch(SCHEMA.map(s=>env.DB.prepare(s)));ready=true;}}
+async function ensureSchema(env:Env){if(!ready){await env.DB.batch(SCHEMA.map(s=>env.DB.prepare(s)));
+ // shares predates passwords; the column is added once (an existing column makes ALTER fail, which is fine).
+ await env.DB.prepare('ALTER TABLE shares ADD COLUMN password TEXT').run().catch(()=>{});ready=true;}}
 // Newest updated_at wins; each accepted write gets the next sequence number so devices can pull "everything after N".
 const UPSERT='INSERT INTO records(owner,kind,id,updated_at,seq,data) VALUES(?1,?2,?3,?4,(SELECT COALESCE(MAX(seq),0)+1 FROM records WHERE owner=?1),?5) ON CONFLICT(owner,kind,id) DO UPDATE SET updated_at=excluded.updated_at,seq=excluded.seq,data=excluded.data WHERE excluded.updated_at>records.updated_at';
 const putRecords=(env:Env,owner:string,list:{kind:string;data:any}[])=>list.length?env.DB.batch(list.map(x=>env.DB.prepare(UPSERT).bind(owner,x.kind,x.data.id,x.data.updated_at,JSON.stringify(x.data)))):Promise.resolve();
@@ -77,6 +98,7 @@ export async function cleanup(env:Env,now=Date.now()){
   AND NOT EXISTS(SELECT 1 FROM records o WHERE o.owner=r.owner AND o.kind='pins' AND json_extract(o.data,'$.file_ref')=json_extract(r.data,'$.file_ref') AND (json_extract(o.data,'$.deleted_at') IS NULL OR json_extract(o.data,'$.deleted_at')>=?1))
   AND NOT EXISTS(SELECT 1 FROM purged_files p WHERE p.owner=r.owner AND p.ref=json_extract(r.data,'$.file_ref')) LIMIT 500`).bind(cutoff).all();
  for(const r of results as {owner:string;ref:string}[]){await env.FILES.delete(r.owner+'/'+r.ref);await env.DB.prepare('INSERT OR IGNORE INTO purged_files(owner,ref) VALUES(?,?)').bind(r.owner,r.ref).run();}
+ const today=new Date(now).toISOString();await env.DB.batch([env.DB.prepare('DELETE FROM share_sessions WHERE expires_at<?').bind(today),env.DB.prepare('DELETE FROM share_attempts WHERE at<?').bind(new Date(now-86400_000).toISOString())]);
  return results.length;
 }
 
@@ -129,13 +151,14 @@ async function ownerApi(req:Request,env:Env,url:URL,ctx:Ctx){
   if(!Array.isArray(list)||list.length>MAX_BATCH||!list.every((x:any)=>validRecord(x?.kind,x?.data)))return json({error:'Invalid records.'},400);
   await putRecords(env,owner,list);return json({ok:true});
  }
- if(url.pathname==='/api/shares'&&req.method==='GET'){const {results}=await env.DB.prepare('SELECT token,board_id,permission,created_at,expires_at FROM shares WHERE owner=? AND revoked_at IS NULL ORDER BY created_at DESC').bind(owner).all();return json({shares:results});}
+ if(url.pathname==='/api/shares'&&req.method==='GET'){const {results}=await env.DB.prepare('SELECT token,board_id,permission,created_at,expires_at,password IS NOT NULL locked FROM shares WHERE owner=? AND revoked_at IS NULL ORDER BY created_at DESC').bind(owner).all();return json({shares:results.map((r:any)=>({...r,locked:!!r.locked}))});}
  if(url.pathname==='/api/shares'&&req.method==='POST'){
   const body=await req.json().catch(()=>null) as any;if(!body||!ID.test(body.board_id)||!['view','comment'].includes(body.permission))return json({error:'Choose a board and what the client can do.'},400);
   const board=await record(env,owner,'boards',body.board_id);if(!board||board.deleted_at)return json({error:'This board has not synced yet. Wait a moment and try again.'},409);
   const days=Number(body.expires_days)||0;const expires=days>0&&days<=365?new Date(Date.now()+days*86400_000).toISOString():null;
-  const share={token:randomToken(),board_id:body.board_id,permission:body.permission,created_at:new Date().toISOString(),expires_at:expires};
-  await env.DB.prepare('INSERT INTO shares(token,owner,board_id,permission,created_at,expires_at) VALUES(?,?,?,?,?,?)').bind(share.token,owner,share.board_id,share.permission,share.created_at,share.expires_at).run();
+  const password=typeof body.password==='string'?body.password:'';if(password&&(password.length<8||password.length>200))return json({error:'Use a password of at least 8 characters.'},400);
+  const share={token:randomToken(),board_id:body.board_id,permission:body.permission,created_at:new Date().toISOString(),expires_at:expires,locked:!!password};
+  await env.DB.prepare('INSERT INTO shares(token,owner,board_id,permission,created_at,expires_at,password) VALUES(?,?,?,?,?,?,?)').bind(share.token,owner,share.board_id,share.permission,share.created_at,share.expires_at,password?await hashPassword(password):null).run();
   return json({share});
  }
  const revoke=url.pathname.match(/^\/api\/shares\/([A-Za-z0-9_-]{32,64})$/);
@@ -161,10 +184,24 @@ async function openShare(env:Env,token:string){
  // A board with comments turned off is view-only for every link.
  return {...share,board,permission:board.comments_enabled===false?'view':share.permission};
 }
+const unlockCookie=(req:Request)=>req.headers.get('cookie')?.match(/(?:^|;\s*)sw_link=([A-Za-z0-9_-]{32})/)?.[1]||null;
+async function unlocked(req:Request,env:Env,token:string){const id=unlockCookie(req);return !!id&&!!await env.DB.prepare('SELECT 1 FROM share_sessions WHERE id=? AND token=? AND expires_at>?').bind(id,token,new Date().toISOString()).first();}
+/** Checks a link's password. Ten wrong tries from one address lock that address out of the link for 15 minutes. */
+async function unlock(req:Request,env:Env,share:any){
+ const ip=req.headers.get('cf-connecting-ip')||'unknown',since=new Date(Date.now()-LOCKOUT_MS).toISOString();
+ const tries=await env.DB.prepare('SELECT COUNT(*) n FROM share_attempts WHERE token=? AND ip=? AND at>?').bind(share.token,ip,since).first() as any;
+ if(tries&&tries.n>=LOCKOUT)return json({error:'Too many tries. Wait 15 minutes, or ask the artist for the password.'},429);
+ const body=await req.json().catch(()=>null) as any;const password=typeof body?.password==='string'?body.password.slice(0,200):'';
+ if(!password||!share.password||!await checkPassword(password,share.password)){await env.DB.prepare('INSERT INTO share_attempts(token,ip,at) VALUES(?,?,?)').bind(share.token,ip,new Date().toISOString()).run();return json({error:'That password isn’t right.'},400);}
+ const until=Math.min(Date.now()+UNLOCK_DAYS*86400_000,share.expires_at?Date.parse(share.expires_at):Infinity),id=randomToken().slice(0,32);
+ await env.DB.prepare('INSERT INTO share_sessions(id,token,expires_at) VALUES(?,?,?)').bind(id,share.token,new Date(until).toISOString()).run();
+ const res=json({ok:true});res.headers.append('set-cookie',`sw_link=${id}; Path=/api/s/${share.token}; Max-Age=${Math.max(1,Math.floor((until-Date.now())/1000))}; HttpOnly; Secure; SameSite=Lax`);return res;
+}
 const guestId=(req:Request)=>{const g=req.headers.get('x-guest-id')||'';return /^[A-Za-z0-9_-]{16,64}$/.test(g)?g:null;};
 
 async function shareApi(req:Request,env:Env,url:URL,token:string,rest:string){
  const share=await openShare(env,token);if(!share)return json({error:'This link is no longer active.'},404);
+ if(share.password){if(rest==='/unlock'&&req.method==='POST')return unlock(req,env,share);if(!await unlocked(req,env,token))return json({error:'This board needs a password.',password:true},401);}
  if(rest===''&&req.method==='GET'){
   const pins=await boardPins(env,share.owner,share.board_id);const g=guestId(req);
   const {results}=await env.DB.prepare("SELECT data FROM records WHERE owner=? AND kind='feedback' AND json_extract(data,'$.board_id')=? AND json_extract(data,'$.deleted_at') IS NULL").bind(share.owner,share.board_id).all();
@@ -207,7 +244,8 @@ async function sharePage(req:Request,env:Env,url:URL,token:string){
  const page=await env.ASSETS.fetch(new Request(new URL('/share',url)));let html=await page.text();
  let tags='<meta property="og:title" content="Studio Wall"><meta property="og:description" content="A shared mood board">';
  if(env.DB){const share=await openShare(env,token).catch(()=>null);
-  if(share){const pins=await boardPins(env,share.owner,share.board_id);const cover=pins.find((p:any)=>p.id===share.board.cover_pin_id&&p.file_ref)||pins.find((p:any)=>p.file_ref);
+  // A password link's preview names nothing: no board name, description or cover image.
+  if(share&&!share.password){const pins=await boardPins(env,share.owner,share.board_id);const cover=pins.find((p:any)=>p.id===share.board.cover_pin_id&&p.file_ref)||pins.find((p:any)=>p.file_ref);
    tags=`<meta property="og:title" content="${esc(share.board.name)}"><meta property="og:description" content="${esc(share.board.description||`${pins.length} reference${pins.length===1?'':'s'} · shared from Studio Wall`)}"><meta property="og:type" content="website"><meta property="og:url" content="${esc(url.origin+url.pathname)}">${cover?`<meta property="og:image" content="${esc(`${url.origin}/api/s/${token}/files/${cover.file_ref}`)}"><meta name="twitter:card" content="summary_large_image">`:''}<title>${esc(share.board.name)} · Studio Wall</title>`;}}
  html=html.replace('<!--share-meta-->',tags);
  return new Response(html,{headers:{'content-type':'text/html;charset=UTF-8','cache-control':'no-store','referrer-policy':'no-referrer','x-robots-tag':'noindex'}});
