@@ -58,3 +58,8 @@
 .client-news-bar button{display:inline-flex;align-items:center;padding:4px 10px}
 .feedback article.is-new{border-left:3px solid var(--accent);padding-left:10px}
 .feedback article.is-new strong::after{content:'New';margin-left:8px;font-size:10px;letter-spacing:1px;color:var(--accent)}
+.pick-clients{display:flex;flex-wrap:wrap;align-items:center;gap:8px;margin:0 0 18px;color:var(--muted);font-size:13px}
+.pick-clients button{display:inline-flex;align-items:center;gap:6px;padding:5px 12px;border:1px solid var(--line);border-radius:999px;background:transparent;color:var(--text)}
+.pick-clients button.chosen{background:var(--accent);border-color:var(--accent);color:var(--accent-ink)}
+.client-stars,.client-starred{color:var(--accent)}
+@media(max-width:760px){.filters{flex-wrap:wrap}}
