@@ -86,3 +86,9 @@ it('adds several images in one request, all or nothing',async()=>{
  const two=(await (await send(chosen,form(2),'d2'.repeat(10))).json() as any).pins.map((p:any)=>p.id);
  expect((await (await call(`/api/s/${chosen}`)).json() as any).pins.map((p:any)=>p.id).sort()).toEqual(['P1',...two].sort());
 });
+
+it('keeps the first link when a list or several lines arrive (iPhone Shortcut URLs)',async()=>{
+ const add='8'.repeat(32);link(add,'contribute');
+ for(const url of [['https://a.example/x','https://b.example'],'https://a.example/x\nhttps://b.example',' https://a.example/x '])
+  expect((await (await call(`/api/s/${add}/pins`,{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({url})},'e3'.repeat(10))).json() as any).pin.source_url).toBe('https://a.example/x');
+});

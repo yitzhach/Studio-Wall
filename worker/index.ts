@@ -117,7 +117,8 @@ async function readCard(req:Request,env:Env,url:URL,owner:string,boardId:string,
  const text=(v:unknown,max:number)=>String(v??'').slice(0,max);
  if(type.startsWith('application/json')||type.startsWith('text/')){
   const raw=type.startsWith('text/')?{url:(await req.text()).trim()}:await req.json().catch(()=>null) as any;if(!raw)return json({error:'Send an image, or JSON with url / note.'},400);
-  const link=text(raw.url,2000);if(link&&!/^https?:\/\//i.test(link))return json({error:'Use a complete http or https link.'},400);
+  // An iPhone Shortcut may send its URLs variable as a list or as several lines; the first link is kept.
+  const link=text((Array.isArray(raw.url)?String(raw.url[0]??''):String(raw.url??'')).trim().split(/\s+/)[0],2000);if(link&&!/^https?:\/\//i.test(link))return json({error:'Use a complete http or https link.'},400);
   pin.source_url=link;pin.note=text(raw.note,4000);pin.meta={kind:link?'link':'idea',title:text(raw.title||url.searchParams.get('title'),200)};pin.source_credit=text(raw.credit,200);
   if(!pin.source_url&&!pin.note.trim())return json({error:'Nothing to save.'},400);
  }else{
