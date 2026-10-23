@@ -45,3 +45,24 @@ it('lets a contribute link add images and notes, and nothing else',async()=>{
  expect((await call(`/api/s/${add}/pins`,{method:'POST',headers:{'content-type':'application/json'},body:'{"note":"x"}'})).status).toBe(429);
  expect((await call(`/api/s/${add}/pins`,{method:'POST',headers:{'content-type':'application/json'},body:'{"note":"x"}'},'h'.repeat(20))).status).toBe(200);
 });
+
+it('lets a client remove only the cards they added, as a soft delete',async()=>{
+ const add='d'.repeat(32),view='e'.repeat(32);link(add,'contribute');link(view,'comment');
+ const ana='a1'.repeat(10),ben='b1'.repeat(10);
+ const json={method:'POST',headers:{'content-type':'application/json'}};
+ const pin=(await (await call(`/api/s/${add}/pins?name=Ana`,{...json,body:'{"note":"Wrong one"}'},ana)).json() as any).pin;
+ expect(pin.mine).toBe(true);
+ // Only the browser that added it sees it as theirs; the owner's own card is no one's to remove.
+ const seen=async(g:string)=>(await (await call(`/api/s/${add}`,{},g)).json() as any).pins.filter((p:any)=>p.mine).map((p:any)=>p.id);
+ expect(await seen(ana)).toEqual([pin.id]);expect(await seen(ben)).toEqual([]);
+ const remove=(id:string,g:string,token=add)=>call(`/api/s/${token}/pins/${id}`,{method:'DELETE'},g);
+ expect((await remove(pin.id,ben)).status).toBe(403);
+ expect((await remove('P1',ana)).status).toBe(403);
+ expect((await remove(pin.id,ana,view)).status).toBe(403);
+ expect((await remove(pin.id,ana)).status).toBe(200);
+ expect((await remove(pin.id,ana)).status).toBe(404);
+ expect((await (await call(`/api/s/${add}`,{},ana)).json() as any).pins.some((p:any)=>p.id===pin.id)).toBe(false);
+ // Kept as a newer, deleted version so the owner's devices sync it into Recently deleted.
+ const stored=JSON.parse((sql.prepare("SELECT data FROM records WHERE id=?").get(pin.id) as any).data);
+ expect(stored.deleted_at).toBeTruthy();expect(stored.version).toBe(2);expect(stored.contributor_name).toBe('Ana');
+});
