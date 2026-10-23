@@ -6,7 +6,7 @@ Updated: 2026-10-23. Start here in a new chat; no old conversation is needed.
 - **Merging:** the user allows the agent to merge its own PRs once tests and build pass (2026-10-22). Main deploys automatically.
 - **Shipped 2026-10-22/23, not yet tried by the user:** owner "Client picks" review (PR #13) and client contributions through links (PR #14). Both live: checked 2026-10-23 via the Cloudflare connector — the deployed `studio-wall` Worker's `worker/index.ts` and `worker/strip.ts` are byte-identical to main after the PR #14 merge (contain `contributor_name`, `ADD_PER_GUEST`).
 - **Deployed 2026-10-23:** PRs #15 (share page layout, 16 px fields on touch screens) and #16 (clients remove their own added cards). Workers Builds for both main merges succeeded (13:24 and 13:28 UTC); the deployed Worker source is byte-identical to main at 784acb8 (contains "You can only remove cards you added").
-- **Deployed 2026-10-23 (later):** PR #19 (owner told when a client removes a card) — the deployed `studio-wall` Worker contains `deleted_by: "guest:" + g` (built from main 51a28dc, checked via the Cloudflare connector). Multi-image client adds: see Latest update for its PR and deploy check.
+- **Deployed 2026-10-23 (later):** PRs #19 (owner told when a client removes a card), #20 (clients add up to 10 images at once) and #21 (Shortcut: first link kept). Checked via the Cloudflare connector after the #21 merge (main 6069923): the deployed `studio-wall` Worker contains `deleted_by`, `ADD_BATCH` and "the first link is kept". Device tests and decisions were not supplied this round (prompt placeholders left empty).
 - **To try on devices (user):** (1) iPhone Safari, client link with *add cards*: open "+ Add to this board", tap each field — the page should not zoom in; add a photo from the library and from the camera, a link, a note; then Remove one of your cards and check it lands in the owner app's Recently deleted after sync and restores. (2) Same link on a desktop browser: the Conversation section is one column. (3) Owner app on iPhone: tapping search or a dialog field should no longer zoom. (4) Older open items: plain/password/chosen-card links in a private window, sync between phone and desktop, HEIC upload on desktop Chrome.
 - **Live:** https://studio-wall.bobdylan2000.workers.dev (Cloudflare Worker `studio-wall`, deploys automatically from `main` via Workers Builds: `npm run build` then `npx wrangler deploy`). Whole site is behind Cloudflare Access (team `frosty-block-644b`, Owner policy = user's email, one-time PIN). PR preview builds fail instantly on non-production branches; production builds from main succeed — ignore preview failures, verify via the main build log.
 - **Storage:** each browser keeps a full local copy in IndexedDB (works offline). With sync on, boards/cards/comments are also stored in D1 `studio-wall-sync` and image files in private R2 bucket `studio-wall-files` (key `email/file_ref`). So images live both locally and in Cloudflare.
@@ -25,7 +25,8 @@ Nothing is blocked on the agent. Work moves forward in this order:
 2. The same client link on a desktop browser: Conversation section in one column, add panel looks right.
 3. Owner app on iPhone: tapping search or a dialog field should not zoom.
 4. New (2026-10-23): on the client link, choose **several photos at once** (iPhone Photos picker: tap more than one) — all should appear, each "Added by <name>". Then Remove one as the client: within ~20 s the owner app shows "<name> removed a card from <board> · see Recently deleted", the board shows a notice with a Recently deleted button, and Restore brings it back.
-5. Older open checks: plain, password and chosen-card links in a private window; phone ↔ desktop sync (desktop boards and images on the phone, phone captures on desktop); HEIC upload in desktop Chrome; "Client picks" with a real client star.
+5. iPhone Shortcut: add the link branch (docs/SHARING_AND_CAPTURE.md §2 step 4), then share a Safari page to it; the link should land in the Inbox.
+6. Older open checks: plain, password and chosen-card links in a private window; phone ↔ desktop sync (desktop boards and images on the phone, phone captures on desktop); HEIC upload in desktop Chrome; "Client picks" with a real client star.
 
 **Step 2 — the user decides (the agent must ask, not build).**
 1. Client cards: keep adding straight onto the board (current), or have the owner approve them first (an approval queue)?
@@ -38,7 +39,7 @@ Nothing is blocked on the agent. Work moves forward in this order:
 2. ~~Tell the owner when a client removes a card~~ — done 2026-10-23, see Latest update.
 3. ~~Several images at once on client links~~ — done 2026-10-23 (up to 10 per add, all or nothing), see Latest update.
 4. The link (Safari URL) branch for the iPhone Shortcut: documented in docs/SHARING_AND_CAPTURE.md §2 step 4; server hardened 2026-10-23 (first link kept when a list arrives). **Left for the user:** add that branch to the Shortcut on the iPhone and try it.
-5. Larger, later: Next priorities #3 (backend contract) and #5 (AI through the same authorised actions). Plan these before building.
+5. **Next for the agent:** Larger, later: Next priorities #3 (backend contract) and #5 (AI through the same authorised actions). Plan these before building.
 
 **Start a new chat?** Yes. This chat's work is merged and deployed, and HANDOFF.md carries everything a new chat needs. Paste this prompt:
 
