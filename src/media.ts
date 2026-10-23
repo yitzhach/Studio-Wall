@@ -33,7 +33,8 @@ export async function optimizeImage(blob:Blob,maxEdge=IMAGE_MAX_EDGE,quality=IMA
   const c=document.createElement('canvas');c.width=width;c.height=height;
   const ctx=c.getContext('2d');if(!ctx)throw Error('Image processing is not available on this device.');
   ctx.drawImage(img,0,0,width,height);
-  return await canvasBlob(c,'image/webp',quality);
+  // Browsers that can't encode WebP hand back a large PNG instead; JPEG keeps those uploads small.
+  const webp=await canvasBlob(c,'image/webp',quality);return webp.type==='image/webp'?webp:await canvasBlob(c,'image/jpeg',.88);
  }finally{URL.revokeObjectURL(url);}
 }
 export async function palette(blob:Blob):Promise<string[]>{

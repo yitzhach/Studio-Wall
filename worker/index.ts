@@ -13,6 +13,8 @@ const KINDS=['boards','pins','feedback'];
 const ID=/^[0-9A-Za-z_-]{1,64}$/;
 const TOKEN=/^[A-Za-z0-9_-]{32,64}$/;
 const MAX_RECORD=200_000,MAX_BATCH=500,MAX_FILE=25*1024*1024,PAGE=500;
+// Cards clients add through a link: the page sends WebP ≤2400 px, so 10 MB is generous. Per board per day, and per client.
+const GUEST_FILE=10*1024*1024,ADD_PER_BOARD=100,ADD_PER_GUEST=25;
 // Matches RETENTION_DAYS in src/data.ts. (Workers modules may only export handlers and functions.)
 const RETENTION_DAYS=30;
 const json=(body:unknown,status=200)=>new Response(JSON.stringify(body),{status,headers:{'content-type':'application/json','cache-control':'no-store'}});
@@ -54,7 +56,7 @@ export function validRecord(kind:string,r:any){
 /** What a client may see of a card: never private image notes, tags or markup comments. Idea/link cards show their text. */
 export function publicPin(p:any){
  const kind=p.meta?.kind||'image';
- return {id:p.id,file_ref:p.file_ref||null,meta:{kind,title:String(p.meta?.title||'')},source_credit:p.is_own?'':String(p.source_credit||''),is_own:!!p.is_own,source_url:kind==='link'?String(p.source_url||''):'',note:kind==='image'?'':String(p.note||''),palette:Array.isArray(p.palette)?p.palette:[],created_at:p.created_at};
+ return {id:p.id,file_ref:p.file_ref||null,meta:{kind,title:String(p.meta?.title||'')},source_credit:p.is_own?'':String(p.source_credit||''),is_own:!!p.is_own,source_url:kind==='link'?String(p.source_url||''):'',note:kind==='image'?'':String(p.note||''),palette:Array.isArray(p.palette)?p.palette:[],contributor:String(p.contributor_name||''),created_at:p.created_at};
 }
 
 // Link passwords: PBKDF2-SHA256, 16-byte salt, stored as pbkdf2$rounds$salt$hash. 20,000 rounds is about 4 ms of CPU, inside
@@ -106,14 +108,11 @@ export async function cleanup(env:Env,now=Date.now()){
 }
 
 /** iPhone Shortcut capture: an image (raw bytes) or a link/note (JSON) goes into the named board, or the Inbox. */
-async function capture(req:Request,env:Env,url:URL,owner:string){
- const {results}=await env.DB.prepare("SELECT data,seq FROM records WHERE owner=? AND kind='boards' ORDER BY seq").bind(owner).all();
- const boards=results.map((r:any)=>JSON.parse(r.data)).filter((b:any)=>!b.deleted_at);
- const want=(url.searchParams.get('board')||'').trim().toLowerCase();
- const board=boards.find((b:any)=>want&&b.name.toLowerCase()===want)||boards.find((b:any)=>b.name==='Inbox');
- if(!board)return json({error:'Open Studio Wall once with sync on, then try again.'},409);
+/** Builds a card from a request: image bytes (title/credit/source in the query) or JSON / text with url, note, title, credit.
+ *  Images are sniffed by their bytes, stripped of hidden data and stored in R2. Returns an error response instead when the input is bad. */
+async function readCard(req:Request,env:Env,url:URL,owner:string,boardId:string,createdBy:string,maxBytes:number):Promise<any>{
  const now=new Date().toISOString(),type=req.headers.get('content-type')||'';
- const pin:any={id:newId(),studio_id:'local-studio',created_at:now,updated_at:now,created_by:'shortcut',actor_type:'human',version:1,deleted_at:null,board_id:board.id,file_ref:null,source_url:'',source_credit:'',is_own:false,note:'',tags:[],palette:[],linked_type:null,linked_id:null,annotations:[],meta:{kind:'idea',title:''}};
+ const pin:any={id:newId(),studio_id:'local-studio',created_at:now,updated_at:now,created_by:createdBy,actor_type:'human',version:1,deleted_at:null,board_id:boardId,file_ref:null,source_url:'',source_credit:'',is_own:false,note:'',tags:[],palette:[],linked_type:null,linked_id:null,annotations:[],meta:{kind:'idea',title:''}};
  const text=(v:unknown,max:number)=>String(v??'').slice(0,max);
  if(type.startsWith('application/json')||type.startsWith('text/')){
   const raw=type.startsWith('text/')?{url:(await req.text()).trim()}:await req.json().catch(()=>null) as any;if(!raw)return json({error:'Send an image, or JSON with url / note.'},400);
@@ -121,11 +120,21 @@ async function capture(req:Request,env:Env,url:URL,owner:string){
   pin.source_url=link;pin.note=text(raw.note,4000);pin.meta={kind:link?'link':'idea',title:text(raw.title||url.searchParams.get('title'),200)};pin.source_credit=text(raw.credit,200);
   if(!pin.source_url&&!pin.note.trim())return json({error:'Nothing to save.'},400);
  }else{
-  const bytes=await req.arrayBuffer();if(!bytes.byteLength||bytes.byteLength>MAX_FILE)return json({error:'Image too large (25 MB max).'},413);
+  const bytes=await req.arrayBuffer();if(!bytes.byteLength||bytes.byteLength>maxBytes)return json({error:`Image too large (${Math.round(maxBytes/1048576)} MB max).`},413);
   const kind=sniffImage(new Uint8Array(bytes,0,Math.min(16,bytes.byteLength)));if(!kind)return json({error:'Images only.'},415);
   pin.file_ref=newId();await env.FILES.put(owner+'/'+pin.file_ref,stripMetadata(new Uint8Array(bytes),kind),{httpMetadata:{contentType:kind}});
   const src=text(url.searchParams.get('source'),2000);pin.source_url=/^https?:\/\//i.test(src)?src:'';pin.meta={kind:'image',title:text(url.searchParams.get('title'),200)};pin.source_credit=text(url.searchParams.get('credit'),200);
  }
+ if(pin.file_ref)pin.palette=(url.searchParams.get('palette')||'').split(',').filter(c=>/^#[0-9a-f]{6}$/i.test(c)).slice(0,8);
+ return pin;
+}
+async function capture(req:Request,env:Env,url:URL,owner:string){
+ const {results}=await env.DB.prepare("SELECT data,seq FROM records WHERE owner=? AND kind='boards' ORDER BY seq").bind(owner).all();
+ const boards=results.map((r:any)=>JSON.parse(r.data)).filter((b:any)=>!b.deleted_at);
+ const want=(url.searchParams.get('board')||'').trim().toLowerCase();
+ const board=boards.find((b:any)=>want&&b.name.toLowerCase()===want)||boards.find((b:any)=>b.name==='Inbox');
+ if(!board)return json({error:'Open Studio Wall once with sync on, then try again.'},409);
+ const pin=await readCard(req,env,url,owner,board.id,'shortcut',MAX_FILE);if(pin instanceof Response)return pin;
  await putRecords(env,owner,[{kind:'pins',data:pin}]);
  return json({ok:true,board:board.name});
 }
@@ -156,7 +165,7 @@ async function ownerApi(req:Request,env:Env,url:URL,ctx:Ctx){
  }
  if(url.pathname==='/api/shares'&&req.method==='GET'){const {results}=await env.DB.prepare('SELECT token,board_id,permission,created_at,expires_at,password IS NOT NULL locked,json_array_length(pin_ids) pin_count FROM shares WHERE owner=? AND revoked_at IS NULL ORDER BY created_at DESC').bind(owner).all();return json({shares:results.map((r:any)=>({...r,locked:!!r.locked}))});}
  if(url.pathname==='/api/shares'&&req.method==='POST'){
-  const body=await req.json().catch(()=>null) as any;if(!body||!ID.test(body.board_id)||!['view','comment'].includes(body.permission))return json({error:'Choose a board and what the client can do.'},400);
+  const body=await req.json().catch(()=>null) as any;if(!body||!ID.test(body.board_id)||!['view','comment','contribute'].includes(body.permission))return json({error:'Choose a board and what the client can do.'},400);
   const board=await record(env,owner,'boards',body.board_id);if(!board||board.deleted_at)return json({error:'This board has not synced yet. Wait a moment and try again.'},409);
   const days=Number(body.expires_days)||0;const expires=days>0&&days<=365?new Date(Date.now()+days*86400_000).toISOString():null;
   const password=typeof body.password==='string'?body.password:'';if(password&&(password.length<8||password.length>200))return json({error:'Use a password of at least 8 characters.'},400);
@@ -232,7 +241,7 @@ async function shareApi(req:Request,env:Env,url:URL,token:string,rest:string){
   return new Response(stripMetadata(new Uint8Array(await o.arrayBuffer()),type),{headers:{'content-type':type,'cache-control':'private, max-age=600'}});
  }
  if(rest==='/feedback'&&req.method==='POST'){
-  if(share.permission!=='comment')return json({error:'This link is view only.'},403);
+  if(share.permission==='view')return json({error:'This link is view only.'},403);
   const g=guestId(req);if(!g)return json({error:'Reload the page and try again.'},400);
   const body=await req.json().catch(()=>null) as any;if(!body)return json({error:'Nothing to send.'},400);
   const pinId=body.pin_id?String(body.pin_id):null;
@@ -249,6 +258,18 @@ async function shareApi(req:Request,env:Env,url:URL,token:string,rest:string){
   const text=String(body.text||'').trim();if(!text||text.length>2000)return json({error:'Write a comment (up to 2,000 characters).'},400);
   const f={id:newId(),studio_id:'local-studio',created_at:now,updated_at:now,created_by:'guest:'+g,actor_type:'human',version:1,deleted_at:null,board_id:share.board_id,pin_id:pinId,text,author_name:name};
   await putRecords(env,share.owner,[{kind:'feedback',data:f}]);return json({comment:{id:f.id,pin_id:pinId,text,author:name,created_at:now}});
+ }
+ if(rest==='/pins'&&req.method==='POST'){
+  if(share.permission!=='contribute')return json({error:'This link can’t add cards.'},403);
+  const g=guestId(req);if(!g)return json({error:'Reload the page and try again.'},400);
+  const added=await env.DB.prepare("SELECT COUNT(*) n,COALESCE(SUM(json_extract(data,'$.created_by')=?3),0) mine FROM records WHERE owner=?1 AND kind='pins' AND json_extract(data,'$.board_id')=?2 AND json_extract(data,'$.created_by') LIKE 'guest:%' AND json_extract(data,'$.created_at')>?4").bind(share.owner,share.board_id,'guest:'+g,new Date(Date.now()-86400_000).toISOString()).first() as any;
+  if(added&&(added.n>=ADD_PER_BOARD||added.mine>=ADD_PER_GUEST))return json({error:'That’s the limit for today. Please send more tomorrow.'},429);
+  const pin=await readCard(req,env,url,share.owner,share.board_id,'guest:'+g,GUEST_FILE);if(pin instanceof Response)return pin;
+  pin.contributor_name=String(url.searchParams.get('name')||'').trim().slice(0,60)||'Client';
+  const writes=[env.DB.prepare(UPSERT).bind(share.owner,'pins',pin.id,pin.updated_at,JSON.stringify(pin))];
+  // A link to chosen cards also shows the cards its clients add.
+  if(share.only)writes.push(env.DB.prepare("UPDATE shares SET pin_ids=json_insert(pin_ids,'$[#]',?) WHERE token=?").bind(pin.id,share.token));
+  await env.DB.batch(writes);return json({pin:publicPin(pin)});
  }
  return json({error:'Not found.'},404);
 }
