@@ -14,7 +14,53 @@ Updated: 2026-10-23. Start here in a new chat; no old conversation is needed.
 - **Access steps done 2026-10-22:** user created Access app "Studio Wall client links" (paths `s/*`, `api/s/*`, `assets/*` on studio-wall.bobdylan2000.workers.dev; policy "Clients" = Bypass/Everyone) and a service token "Studio Wall Shortcut" with a Service Auth policy "Shortcut" on the main app ("bobdylan2000.workers.dev"). Checked from outside without login: `/s/<token>` 200, `/api/s/<unknown 32-char token>/board` 404 "no longer active" (reaches the Worker), `/assets/*` 200; `/`, `/api/boards`, `/api/capture` still redirect to Access login. The reusable "Shortcut" policy was first created but not attached to the main app (app_count 0), so the Shortcut got the Access login page (empty notification, nothing in D1); the agent attached it via the Cloudflare API connector (main app policies now Owner 1, Shortcut 2). Service token itself not testable by the agent (secret stays with the user).
 - **iPhone Shortcut works (2026-10-22):** built per docs/SHARING_AND_CAPTURE.md §2 (photos-only version: Receive Images from Share Sheet → Convert to JPEG → Resize 2400 → Get Contents of URL POST /api/capture with the two CF-Access-Client-* headers, body File = Resized Image → Show Notification). First capture landed in D1 (pin created_by `shortcut`, with image, 16:41 UTC). iOS asks once to allow sending photos to the site ("Always Allow"). Not yet added: the link (Safari URL) branch.
 - **Connectors:** the session now has the Cloudflare API connector (mcp.cloudflare.com, Access read/edit), so Access apps/policies can be checked and changed by the agent; the older Workers-bindings connector still serves D1 queries.
-- **Next smallest task (older note, still open):** user opens a real client link (plain, password, chosen cards) in a private window / on the phone and reports; also verify sync, zoom, colour search, HEIC upload on real devices. After that: HANDOFF "Next priorities" (client contributions done 2026-10-23; owner favourites review done 2026-10-22; server-side resize/re-encode needs a Cloudflare Images binding, so the user's OK on setup and cost).
+- **Next steps:** see "What happens next" right below (user tests → user decisions → agent work), plus the prompt for starting a new chat.
+
+## What happens next (2026-10-23)
+Nothing is blocked on the agent. Work moves forward in this order:
+
+**Step 1 — the user tests on devices (no agent needed).** Report what works and what doesn't (a screenshot helps).
+1. iPhone Safari, a client link with *View, comment and add cards*: open "+ Add to this board" and tap each field (the page should not zoom); add a photo from the library, one from the camera, a link and a note; Remove one of your added cards; in the owner app after sync, find it in Recently deleted and restore it.
+2. The same client link on a desktop browser: Conversation section in one column, add panel looks right.
+3. Owner app on iPhone: tapping search or a dialog field should not zoom.
+4. Older open checks: plain, password and chosen-card links in a private window; phone ↔ desktop sync (desktop boards and images on the phone, phone captures on desktop); HEIC upload in desktop Chrome; "Client picks" with a real client star.
+
+**Step 2 — the user decides (the agent must ask, not build).**
+1. Client cards: keep adding straight onto the board (current), or have the owner approve them first (an approval queue)?
+2. Cloudflare Images for resizing/re-encoding images on the server: costs money and needs setup. Yes / not now?
+3. Email invitations for client links: need an email service and its API key (a secret). Yes / not now?
+4. Owner app search field shows a second inner border (long-standing). Keep or remove?
+
+**Step 3 — agent work that needs no decision** (do these in the next chat, smallest first):
+1. Fix anything Step 1 finds.
+2. Tell the owner when a client removes a card (toast and/or badge; today the card just leaves the board).
+3. Several images at once on client links (today one at a time; the owner app already uploads all-or-nothing batches).
+4. Optional: the link (Safari URL) branch for the iPhone Shortcut, documented in docs/SHARING_AND_CAPTURE.md §2.
+5. Larger, later: Next priorities #3 (backend contract) and #5 (AI through the same authorised actions). Plan these before building.
+
+**Start a new chat?** Yes. This chat's work is merged and deployed, and HANDOFF.md carries everything a new chat needs. Paste this prompt:
+
+```
+Work in yitzhach/Studio-Wall. Start by reading HANDOFF.md ("Current state",
+"What happens next" and the newest "Latest update"), then AGENTS.md. Work from
+current main. You may merge your own PRs once `npm test` and `npm run build`
+pass; main deploys to Cloudflare automatically. Verify a deploy by the deployed
+Worker code via the Cloudflare connector, not GitHub checks.
+Keep HANDOFF.md current with every change.
+
+Device test results: <paste what worked / what didn't, or "not tested yet">
+Decisions: <client cards direct or approved first; Cloudflare Images yes/not now;
+email invitations yes/not now; search-field border keep/remove — or "none yet">
+
+This round:
+1. Fix anything my device tests found.
+2. Then work through HANDOFF "What happens next" Step 3, smallest first,
+   checking any UI change in headless Chromium at 390 px and desktop width.
+3. Ask me before anything that needs my decision, money or secrets
+   (Cloudflare Images or other paid setup, an email service, approving client
+   cards instead of direct adds).
+I may not be able to test on devices; list what I should try when I can.
+```
 
 ## Latest update — clients can remove cards they added (2026-10-23)
 - On a contribute link, cards a client added from **their own browser** show a **Remove** button (asks to confirm). Other clients' cards and the owner's cards never show it. Why: cards go straight onto the board, so a client who picked the wrong photo had no undo.
