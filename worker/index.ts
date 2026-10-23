@@ -277,9 +277,9 @@ async function shareApi(req:Request,env:Env,url:URL,token:string,rest:string){
   const g=guestId(req);if(!g)return json({error:'Reload the page and try again.'},400);
   const p=await record(env,share.owner,'pins',own[1]);
   if(!p||p.deleted_at||p.board_id!==share.board_id||!inShare(share,p.id))return json({error:'That card is no longer on this board.'},404);
-  // A client removes only cards added from their own browser. It is a soft delete, so the owner can restore it from Recently deleted for 30 days.
+  // A client removes only cards added from their own browser. It is a soft delete, so the owner can restore it from Recently deleted for 30 days; deleted_by tells the owner's app a client removed it.
   if(p.created_by!=='guest:'+g)return json({error:'You can only remove cards you added.'},403);
-  const now=new Date().toISOString();await putRecords(env,share.owner,[{kind:'pins',data:{...p,deleted_at:now,updated_at:now,version:(Number(p.version)||1)+1}}]);return json({ok:true});
+  const now=new Date().toISOString();await putRecords(env,share.owner,[{kind:'pins',data:{...p,deleted_at:now,deleted_by:'guest:'+g,updated_at:now,version:(Number(p.version)||1)+1}}]);return json({ok:true});
  }
  return json({error:'Not found.'},404);
 }

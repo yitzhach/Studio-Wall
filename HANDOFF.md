@@ -32,8 +32,8 @@ Nothing is blocked on the agent. Work moves forward in this order:
 4. Owner app search field shows a second inner border (long-standing). Keep or remove?
 
 **Step 3 — agent work that needs no decision** (do these in the next chat, smallest first):
-1. Fix anything Step 1 finds.
-2. Tell the owner when a client removes a card (toast and/or badge; today the card just leaves the board).
+1. Fix anything Step 1 finds. (2026-10-23 round: the user had not tested yet.)
+2. ~~Tell the owner when a client removes a card~~ — done 2026-10-23, see Latest update.
 3. Several images at once on client links (today one at a time; the owner app already uploads all-or-nothing batches).
 4. Optional: the link (Safari URL) branch for the iPhone Shortcut, documented in docs/SHARING_AND_CAPTURE.md §2.
 5. Larger, later: Next priorities #3 (backend contract) and #5 (AI through the same authorised actions). Plan these before building.
@@ -62,10 +62,15 @@ This round:
 I may not be able to test on devices; list what I should try when I can.
 ```
 
-## Latest update — clients can remove cards they added (2026-10-23)
+## Latest update — owner is told when a client removes a card (2026-10-23)
+- When a client removes a card they added (contribute link), the owner app now says so: a sync toast "Ana removed a card from Living room · see Recently deleted"; the board's "new from clients" badge and the "New from clients" bar count it; on the board a notice "Ana removed “Blue tiles” they added." with a **Recently deleted** button; in Recently deleted the row reads "Living room · removed by Ana · n days left".
+- How: the server's client delete now also stores `deleted_by: guest:<id>` on the pin (worker/index.ts). `snapshot()` returns `removed` = pins deleted by a guest within the 30-day window (src/data.ts). `pin.restore` clears `deleted_by`, so restoring removes the notice, and a later owner delete is not reported as a client removal. Removals before this change have no `deleted_by` and are not reported.
+- Validation: 46 tests (contribute.test.ts: stored `deleted_by` equals the adder; sync.test.ts: the removal syncs into `removed`, restore clears it, owner re-delete not reported) and build pass. Headless Chromium at 390 px (touch) and 1280 px against a mocked sync API: toast, badge, board notice, Recently deleted row, restore → notice gone and card back; no horizontal scroll, no script errors. Not tested in production.
+
+## Previous update — clients can remove cards they added (2026-10-23)
 - On a contribute link, cards a client added from **their own browser** show a **Remove** button (asks to confirm). Other clients' cards and the owner's cards never show it. Why: cards go straight onto the board, so a client who picked the wrong photo had no undo.
 - Server: `DELETE /api/s/<token>/pins/<id>` (worker/index.ts). Needs a contribute link (403 otherwise, also when the board's client comments are off), the `x-guest-id` that added the card (`created_by: guest:<id>`, else 403), and the card still live on that board/selection (else 404). Soft delete: a new version with `deleted_at`, so it syncs to the owner's devices into **Recently deleted** (restorable for 30 days; image cleaned up after that by the existing purge). Added cards still count toward the daily add limits after removal. The board JSON and the add response now carry `mine` per card. A different browser or cleared site data = a different guest id, so the client can't remove from there (the owner still can).
-- Not built: a toast/badge telling the owner a client removed something (the card just leaves the board); clients editing their cards.
+- Not built: clients editing their cards. (Owner notice of removals: added in the next update.)
 - Validation: 46 tests (contribute.test.ts: own card 200, someone else's / owner's card 403, comment-only link 403, second delete 404, gone from the link, stored version 2 with `deleted_at`; sync.test.ts: the deleted version pulled onto the owner's device moves the card to Recently deleted and `pin.restore` puts it back on its board) and build pass. Chromium with a mocked API at 390 px and desktop: Remove only on own cards, the action row wraps instead of widening the page (it pushed the page to 414 px before the fix), confirm → DELETE → card gone. Not tested in production.
 
 ## Previous update — share page layout fixes from a browser check (2026-10-23)
