@@ -64,5 +64,5 @@ it('lets a client remove only the cards they added, as a soft delete',async()=>{
  expect((await (await call(`/api/s/${add}`,{},ana)).json() as any).pins.some((p:any)=>p.id===pin.id)).toBe(false);
  // Kept as a newer, deleted version so the owner's devices sync it into Recently deleted.
  const stored=JSON.parse((sql.prepare("SELECT data FROM records WHERE id=?").get(pin.id) as any).data);
- expect(stored.deleted_at).toBeTruthy();expect(stored.version).toBe(2);expect(stored.contributor_name).toBe('Ana');
+ expect(stored.deleted_at).toBeTruthy();expect(stored.version).toBe(2);expect(stored.contributor_name).toBe('Ana');expect(stored.deleted_by).toBe(stored.created_by);
 });

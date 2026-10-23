@@ -3,7 +3,7 @@ import {ulid} from 'ulid';
 export type Base={id:string;studio_id:string;created_at:string;updated_at:string;created_by:string;actor_type:'human'|'assistant';version:number;deleted_at:string|null};
 export type Board=Base & {name:string;description:string;cover_pin_id:string|null;visibility:'private'|'shared_link';position:number;comments_enabled?:boolean;share_settings?:{mode:'public'|'private'|'password';permission:'view'|'comment'|'contribute'}};
 export type Annotation={id:string;tool:'pen'|'circle'|'arrow';points:{x:number;y:number}[];comment:string};
-export type Pin=Base & {board_id:string;file_ref:string|null;source_url:string;source_credit:string;is_own:boolean;note:string;tags:string[];palette:string[];linked_type:string|null;linked_id:string|null;annotations?:Annotation[];meta:{kind:'image'|'idea'|'link';title:string};contributor_name?:string};
+export type Pin=Base & {board_id:string;file_ref:string|null;source_url:string;source_credit:string;is_own:boolean;note:string;tags:string[];palette:string[];linked_type:string|null;linked_id:string|null;annotations?:Annotation[];meta:{kind:'image'|'idea'|'link';title:string};contributor_name?:string;deleted_by?:string|null};
 export type Feedback=Base & {board_id:string;pin_id:string|null;text:string;starred?:boolean;author_name?:string};
 export type Action={type:string;id?:string;payload?:any;blob?:Blob;blobs?:Record<string,Blob>;recordHistory?:boolean};
 export const STUDIO='local-studio';
@@ -22,7 +22,7 @@ export function historyStatus(){return {canUndo:undoStack.length>0,canRedo:redoS
 export function resetHistory(){undoStack.length=0;redoStack.length=0;}
 export async function undo(){const previous=undoStack.pop();if(!previous)return false;redoStack.push(await currentHistoryState());await restoreHistoryState(previous);return true;}
 export async function redo(){const next=redoStack.pop();if(!next)return false;undoStack.push(await currentHistoryState());await restoreHistoryState(next);return true;}
-export async function snapshot(){const db=await database;const [boards,pins,feedback]=await Promise.all(['boards','pins','feedback'].map(s=>db.getAll(s)));return {boards:(boards as Board[]).filter(b=>!b.deleted_at).sort((a,b)=>a.position-b.position),pins:(pins as Pin[]).filter(p=>!p.deleted_at),feedback:(feedback as Feedback[]).filter(f=>!f.deleted_at)};}
+export async function snapshot(){const db=await database;const [boards,pins,feedback]=await Promise.all(['boards','pins','feedback'].map(s=>db.getAll(s)));return {boards:(boards as Board[]).filter(b=>!b.deleted_at).sort((a,b)=>a.position-b.position),pins:(pins as Pin[]).filter(p=>!p.deleted_at),removed:(pins as Pin[]).filter(p=>p.deleted_at&&p.deleted_by?.startsWith('guest:')&&Date.parse(p.deleted_at)>=Date.now()-RETENTION_DAYS*86400_000),feedback:(feedback as Feedback[]).filter(f=>!f.deleted_at)};}
 export async function file(id:string){return (await database).get('files',id) as Promise<Blob|undefined>;}
 export async function action(a:Action){
  const db=await database; const tx=db.transaction(['boards','pins','files','feedback','activity_log','outbox'],'readwrite');
@@ -96,7 +96,7 @@ export async function action(a:Action){
  // Undo a delete within the retention window. A card whose board is gone returns to the Inbox; a board brings back the cards deleted with it.
  const store=tx.objectStore(a.type==='pin.restore'?'pins':'boards');result=await store.get(a.id!);if(!result||!result.deleted_at)throw Error('This item is not in Recently deleted.');
  if(Date.parse(result.deleted_at)<Date.now()-RETENTION_DAYS*86400_000)throw Error('This item was deleted too long ago to restore.');
- const removedAt=result.deleted_at;result={...result,deleted_at:null,updated_at:b.updated_at,version:result.version+1};
+ const removedAt=result.deleted_at;result={...result,deleted_at:null,deleted_by:null,updated_at:b.updated_at,version:result.version+1};
  if(a.type==='pin.restore'){const board=await tx.objectStore('boards').get(result.board_id);if(!board||board.deleted_at){const inbox=(await tx.objectStore('boards').getAll()).find(x=>x.name==='Inbox'&&!x.deleted_at);if(!inbox)throw Error('Restore its board first.');result.board_id=inbox.id;}}
  else for(const pin of await tx.objectStore('pins').getAll())if(pin.board_id===result.id&&pin.deleted_at===removedAt)await tx.objectStore('pins').put({...pin,deleted_at:null,updated_at:b.updated_at,version:pin.version+1});
  await store.put(result);

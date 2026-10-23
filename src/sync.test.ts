@@ -42,10 +42,15 @@ describe('live sync',()=>{
   const card={id:'C1',studio_id:'local-studio',created_at:t0,updated_at:t0,created_by:'guest:abc',actor_type:'human',version:1,deleted_at:null,board_id:b.id,file_ref:null,source_url:'',source_credit:'',is_own:false,note:'Wrong one',tags:[],palette:[],linked_type:null,linked_id:null,annotations:[],meta:{kind:'idea',title:''},contributor_name:'Ana'};
   server.rows.set('pinsC1',{kind:'pins',data:card,seq:++server.seq});await s1.syncNow(()=>{});
   expect((await snapshot()).pins.some(p=>p.id==='C1')).toBe(true);
-  server.rows.set('pinsC1',{kind:'pins',data:{...card,deleted_at:t1,updated_at:t1,version:2},seq:++server.seq});await s1.syncNow(()=>{});
-  expect((await snapshot()).pins.some(p=>p.id==='C1')).toBe(false);
+  server.rows.set('pinsC1',{kind:'pins',data:{...card,deleted_at:t1,deleted_by:'guest:abc',updated_at:t1,version:2},seq:++server.seq});let remote=0;await s1.syncNow(()=>{remote++;});
+  expect(remote).toBe(1);expect((await snapshot()).pins.some(p=>p.id==='C1')).toBe(false);
+  // The owner app lists it as a client removal (toast, badge, board notice) until it is restored.
+  expect((await snapshot()).removed.map(p=>[p.id,p.contributor_name])).toEqual([['C1','Ana']]);
   const {recentlyDeleted}=await import('./data');expect((await recentlyDeleted()).pins.map(p=>p.id)).toEqual(['C1']);
   await action({type:'pin.restore',id:'C1'});expect((await snapshot()).pins.find(p=>p.id==='C1')?.board_id).toBe(b.id);
+  const back=await snapshot();expect(back.removed).toEqual([]);expect(back.pins.find(p=>p.id==='C1')?.deleted_by).toBeNull();
+  // Deleted again by the owner, it is not reported as a client removal.
+  await action({type:'pin.delete',id:'C1'});expect((await snapshot()).removed).toEqual([]);
  });
  it('stays device-local when the API is not configured',async()=>{vi.stubGlobal('fetch',vi.fn(async()=>new Response('{}',{status:503})));const s=await import('./sync');await s.syncNow(()=>{});expect(s.syncStatus().state).toBe('off');});
  it('worker rejects malformed records',()=>{expect(validRecord('pins',{id:'../x',board_id:'a',updated_at:'2026-01-01T00:00:00Z'})).toBe(false);expect(validRecord('users',{id:'a',updated_at:'2026-01-01T00:00:00Z'})).toBe(false);expect(validRecord('boards',{id:'A1',updated_at:'2026-01-01T00:00:00Z'})).toBe(true);});
