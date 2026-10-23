@@ -41,7 +41,7 @@
 /* Client share page (/s/<token>) */
 .share-page{max-width:1500px;margin:0 auto;padding:40px 24px 80px;min-height:100dvh;background:var(--bg);color:var(--text)}
 .share-head{display:grid;gap:8px;justify-items:start}.share-head h1{margin:0}.share-meta{color:var(--muted);margin:0}
-.share-actions{display:flex;gap:6px;margin:6px 0 4px}.share-actions button{padding:5px 10px;font-size:13px}.share-actions [aria-pressed=true]{color:var(--accent)}
+.share-actions{display:flex;flex-wrap:wrap;gap:6px;margin:6px 0 4px}.share-actions button{padding:5px 10px;font-size:13px;white-space:nowrap}.share-actions [aria-pressed=true]{color:var(--accent)}
 .share-source{display:inline-block;font-size:13px;margin:4px 0;color:var(--muted)}
 .share-feedback{max-width:760px}.share-feedback form{display:grid;gap:10px;margin-top:16px}.share-about{margin:0;color:var(--muted)}.share-about button{font-size:12px;padding:3px 8px;margin-left:6px}
 .share-unlock{display:grid;gap:10px;width:min(100%,360px);margin-top:8px}

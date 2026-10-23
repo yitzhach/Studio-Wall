@@ -228,7 +228,7 @@ async function shareApi(req:Request,env:Env,url:URL,token:string,rest:string){
   const {results}=await env.DB.prepare("SELECT data FROM records WHERE owner=? AND kind='feedback' AND json_extract(data,'$.board_id')=? AND json_extract(data,'$.deleted_at') IS NULL").bind(share.owner,share.board_id).all();
   // Board-wide comments always show; comments and stars on cards outside a selection never do.
   const feedback=results.map((r:any)=>JSON.parse(r.data)).filter((f:any)=>!f.pin_id||inShare(share,f.pin_id));
-  return json({board:{name:share.board.name,description:share.board.description||''},permission:share.permission,expires_at:share.expires_at,pins:pins.map(publicPin),
+  return json({board:{name:share.board.name,description:share.board.description||''},permission:share.permission,expires_at:share.expires_at,pins:pins.map((p:any)=>({...publicPin(p),mine:!!g&&p.created_by==='guest:'+g})),
    comments:feedback.filter((f:any)=>f.text).sort((a:any,b:any)=>String(a.created_at).localeCompare(String(b.created_at))).map((f:any)=>({id:f.id,pin_id:f.pin_id||null,text:f.text,author:f.author_name||(String(f.created_by).startsWith('guest:')?'Client':'Artist'),created_at:f.created_at})),
    starred:g?feedback.filter((f:any)=>f.starred===true&&f.created_by==='guest:'+g).map((f:any)=>f.pin_id):[]});
  }
@@ -269,7 +269,17 @@ async function shareApi(req:Request,env:Env,url:URL,token:string,rest:string){
   const writes=[env.DB.prepare(UPSERT).bind(share.owner,'pins',pin.id,pin.updated_at,JSON.stringify(pin))];
   // A link to chosen cards also shows the cards its clients add.
   if(share.only)writes.push(env.DB.prepare("UPDATE shares SET pin_ids=json_insert(pin_ids,'$[#]',?) WHERE token=?").bind(pin.id,share.token));
-  await env.DB.batch(writes);return json({pin:publicPin(pin)});
+  await env.DB.batch(writes);return json({pin:{...publicPin(pin),mine:true}});
+ }
+ const own=rest.match(/^\/pins\/([0-9A-Za-z_-]{1,64})$/);
+ if(own&&req.method==='DELETE'){
+  if(share.permission!=='contribute')return json({error:'This link can’t change cards.'},403);
+  const g=guestId(req);if(!g)return json({error:'Reload the page and try again.'},400);
+  const p=await record(env,share.owner,'pins',own[1]);
+  if(!p||p.deleted_at||p.board_id!==share.board_id||!inShare(share,p.id))return json({error:'That card is no longer on this board.'},404);
+  // A client removes only cards added from their own browser. It is a soft delete, so the owner can restore it from Recently deleted for 30 days.
+  if(p.created_by!=='guest:'+g)return json({error:'You can only remove cards you added.'},403);
+  const now=new Date().toISOString();await putRecords(env,share.owner,[{kind:'pins',data:{...p,deleted_at:now,updated_at:now,version:(Number(p.version)||1)+1}}]);return json({ok:true});
  }
  return json({error:'Not found.'},404);
 }

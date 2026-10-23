@@ -3,7 +3,7 @@ import './style.css';
 import {openGallery} from './viewer';
 import type {Pin} from './data';
 import {IMAGE_ACCEPT,optimizeImage,palette} from './media';
-type SharedPin={id:string;file_ref:string|null;meta:{kind:'image'|'idea'|'link';title:string};source_credit:string;is_own:boolean;source_url:string;note:string;palette:string[];contributor?:string};
+type SharedPin={id:string;file_ref:string|null;meta:{kind:'image'|'idea'|'link';title:string};source_credit:string;is_own:boolean;source_url:string;note:string;palette:string[];contributor?:string;mine?:boolean};
 type Comment={id:string;pin_id:string|null;text:string;author:string;created_at:string};
 type Shared={board:{name:string;description:string};permission:'view'|'comment'|'contribute';expires_at:string|null;pins:SharedPin[];comments:Comment[];starred:string[]};
 const root=document.querySelector<HTMLElement>('#share')!;
@@ -19,7 +19,7 @@ let data:Shared,about:string|null=null;
 
 function card(p:SharedPin){const img=src(p),stars=data.starred.includes(p.id),count=data.comments.filter(c=>c.pin_id===p.id).length,can=data.permission!=='view';
  return `<div class="pin-wrap"><button class="pin ${img?'':'text-pin'}" data-open="${p.id}">${img?`<img src="${img}" alt="${esc(p.meta.title||'Reference')}" loading="lazy" draggable="false">`:`<div class="idea-content"><p>${esc(p.note||p.meta.title||p.source_url)}</p></div>`}<div class="caption"><strong>${stars?'★ ':''}${esc(p.meta.title||(p.meta.kind==='idea'?'A thought':'Untitled reference'))}</strong><span>${esc(p.contributor?`Added by ${p.contributor}`:p.is_own?'Artist’s own work':p.source_credit||'')}${count?` · ${count} comment${count===1?'':'s'}`:''}</span></div></button>
- ${p.source_url?`<a class="share-source" href="${esc(p.source_url)}" target="_blank" rel="noopener noreferrer">Open link ↗</a>`:''}${can?`<div class="share-actions"><button data-star="${p.id}" aria-pressed="${stars}" aria-label="${stars?'Remove star':'Star this'}">${stars?'★ Starred':'☆ Star'}</button><button data-about="${p.id}">Comment</button></div>`:''}</div>`;}
+ ${p.source_url?`<a class="share-source" href="${esc(p.source_url)}" target="_blank" rel="noopener noreferrer">Open link ↗</a>`:''}${can?`<div class="share-actions"><button data-star="${p.id}" aria-pressed="${stars}" aria-label="${stars?'Remove star':'Star this'}">${stars?'★ Starred':'☆ Star'}</button><button data-about="${p.id}">Comment</button>${p.mine&&data.permission==='contribute'?`<button class="danger" data-remove="${p.id}" aria-label="Remove this card you added">Remove</button>`:''}</div>`:''}</div>`;}
 
 function render(){
  const can=data.permission!=='view',adds=data.permission==='contribute',name=store.get('studio-wall-guest-name')||'',aboutPin=data.pins.find(p=>p.id===about);
@@ -36,6 +36,8 @@ function bind(){
  root.querySelector<HTMLButtonElement>('#theme-toggle')!.onclick=()=>{const t=document.documentElement.dataset.theme==='dark'?'light':'dark';document.documentElement.dataset.theme=t;store.set('studio-wall-theme',t);render();};
  root.querySelectorAll<HTMLButtonElement>('[data-star]').forEach(b=>b.onclick=async()=>{const id=b.dataset.star!,on=!data.starred.includes(id);b.disabled=true;
   try{await api('/feedback',{method:'POST',body:JSON.stringify({pin_id:id,starred:on,name:store.get('studio-wall-guest-name')||''})});data.starred=on?[...data.starred,id]:data.starred.filter(x=>x!==id);render();}catch(e){alert((e as Error).message);b.disabled=false;}});
+ root.querySelectorAll<HTMLButtonElement>('[data-remove]').forEach(b=>b.onclick=async()=>{const id=b.dataset.remove!;if(!confirm('Remove this card you added? The artist can still bring it back.'))return;b.disabled=true;
+  try{await api('/pins/'+id,{method:'DELETE'});data.pins=data.pins.filter(p=>p.id!==id);if(about===id)about=null;render();}catch(e){alert((e as Error).message);b.disabled=false;}});
  root.querySelectorAll<HTMLButtonElement>('[data-about]').forEach(b=>b.onclick=()=>{about=b.dataset.about!;render();root.querySelector<HTMLTextAreaElement>('[name=text]')?.focus();});
  root.querySelector('#clear-about')?.addEventListener('click',()=>{about=null;render();});
  const form=root.querySelector<HTMLFormElement>('#comment-form');
