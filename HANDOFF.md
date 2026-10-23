@@ -37,7 +37,7 @@ Nothing is blocked on the agent. Work moves forward in this order:
 1. Fix anything Step 1 finds. (2026-10-23 round: the user had not tested yet.)
 2. ~~Tell the owner when a client removes a card~~ — done 2026-10-23, see Latest update.
 3. ~~Several images at once on client links~~ — done 2026-10-23 (up to 10 per add, all or nothing), see Latest update.
-4. Optional: the link (Safari URL) branch for the iPhone Shortcut, documented in docs/SHARING_AND_CAPTURE.md §2.
+4. The link (Safari URL) branch for the iPhone Shortcut: documented in docs/SHARING_AND_CAPTURE.md §2 step 4; server hardened 2026-10-23 (first link kept when a list arrives). **Left for the user:** add that branch to the Shortcut on the iPhone and try it.
 5. Larger, later: Next priorities #3 (backend contract) and #5 (AI through the same authorised actions). Plan these before building.
 
 **Start a new chat?** Yes. This chat's work is merged and deployed, and HANDOFF.md carries everything a new chat needs. Paste this prompt:
@@ -64,7 +64,11 @@ This round:
 I may not be able to test on devices; list what I should try when I can.
 ```
 
-## Latest update — clients add several images at once (2026-10-23)
+## Latest update — Shortcut links: first link kept (2026-10-23)
+- The Shortcut's link branch (docs/SHARING_AND_CAPTURE.md §2 step 4) sends JSON `{url}`. Shortcuts may fill `url` with a list or several lines; the server (`readCard`, shared by `/api/capture` and client links) now keeps the first link, trimmed, instead of storing the whole text as one broken link. The docs gained that note and a "test it" line.
+- Validation: 48 tests (contribute.test.ts: list, two lines, padded string → `https://a.example/x`) and build pass. No UI change. The Shortcut branch itself is not built or tried; that is on the user's iPhone.
+
+## Previous update — clients add several images at once (2026-10-23)
 - On a contribute link, the Images field now takes **up to 10 photos** at a time (“Up to 10 at a time.”). The page prepares every photo first (WebP ≤2400 px, HEIC/TIFF converted, palette) with “Preparing 2 of 3…”; if any photo can't be read, nothing is sent and the error names the file. All go in **one request**; the title, if given, goes on each card. 11+ photos are refused in the page.
 - Server: `POST /api/s/<token>/pins` also accepts `multipart/form-data` (fields `image` × n, `palette` × n in the same order, `title`; name still in `?name=`). Every image is size-checked (10 MB each) and sniffed before anything is stored; the daily limits count the whole batch (“You can add 2 more today. Choose fewer images.”); files go to R2, then all cards are written in one D1 batch (files removed again if that batch fails). Response `{pins:[…]}`; single-image raw bytes and JSON notes/links work as before (`{pin}`). A chosen-cards link gets every new card appended.
 - Validation: 47 tests (contribute.test.ts: 3 images → 3 cards with the right palettes and files; one unreadable file → 415 and nothing stored; 11 files → 400; over the allowance → 429 “2 more today”, nothing stored; chosen-cards link shows all added cards) and build pass. Headless Chromium at 390 px (touch) and 1280 px with real images (WebP + 2 PNG) against a mocked API: one multipart request with 3 images and 3 palettes, 3 new cards, no horizontal scroll, no script errors; 11 files → “Choose up to 10 images at a time.” and nothing sent. Not tested on a real iPhone (multi-select in the Photos picker) or in production.

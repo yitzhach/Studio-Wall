@@ -39,6 +39,8 @@ Access always applies the most specific path, so only these paths skip login. Th
 4. **Otherwise**:
    - **Get URLs from** *Shortcut Input*.
    - **Get Contents of URL**: same URL, method and headers. Request Body: **JSON** with key `url` = *URLs* (optionally `title` = *Name* of Shortcut Input, `note` = text).
+   - If more than one link comes through (a list, or several lines), the first one is saved.
+   - Test it: in Safari open any page → Share → your Shortcut. The link appears as a card in the Inbox at the app's next sync. A notification with an error instead means the headers or the Service Auth policy need checking.
 5. **End If**, then **Show Notification** "Saved to Studio Wall".
 
 Everything lands in your **Inbox** and appears in the app at its next sync. To choose a board, add **Choose from Menu** (or **Ask for Input**) with the board name and append `?board=Board name` to the URL. An unknown name falls back to the Inbox. Optional query values: `title`, `credit`, `source` (the page link for an image).
