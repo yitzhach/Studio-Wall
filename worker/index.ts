@@ -14,7 +14,7 @@ const ID=/^[0-9A-Za-z_-]{1,64}$/;
 const TOKEN=/^[A-Za-z0-9_-]{32,64}$/;
 const MAX_RECORD=200_000,MAX_BATCH=500,MAX_FILE=25*1024*1024,PAGE=500;
 // Cards clients add through a link: the page sends WebP ≤2400 px, so 10 MB is generous. Per board per day, and per client.
-const GUEST_FILE=10*1024*1024,ADD_PER_BOARD=100,ADD_PER_GUEST=25;
+const GUEST_FILE=10*1024*1024,ADD_PER_BOARD=100,ADD_PER_GUEST=25,ADD_BATCH=10;
 // Matches RETENTION_DAYS in src/data.ts. (Workers modules may only export handlers and functions.)
 const RETENTION_DAYS=30;
 const json=(body:unknown,status=200)=>new Response(JSON.stringify(body),{status,headers:{'content-type':'application/json','cache-control':'no-store'}});
@@ -110,9 +110,10 @@ export async function cleanup(env:Env,now=Date.now()){
 /** iPhone Shortcut capture: an image (raw bytes) or a link/note (JSON) goes into the named board, or the Inbox. */
 /** Builds a card from a request: image bytes (title/credit/source in the query) or JSON / text with url, note, title, credit.
  *  Images are sniffed by their bytes, stripped of hidden data and stored in R2. Returns an error response instead when the input is bad. */
+const blankPin=(boardId:string,createdBy:string,now=new Date().toISOString()):any=>({id:newId(),studio_id:'local-studio',created_at:now,updated_at:now,created_by:createdBy,actor_type:'human',version:1,deleted_at:null,board_id:boardId,file_ref:null,source_url:'',source_credit:'',is_own:false,note:'',tags:[],palette:[],linked_type:null,linked_id:null,annotations:[],meta:{kind:'idea',title:''}});
+const okPalette=(v:string|null)=>(v||'').split(',').filter(c=>/^#[0-9a-f]{6}$/i.test(c)).slice(0,8);
 async function readCard(req:Request,env:Env,url:URL,owner:string,boardId:string,createdBy:string,maxBytes:number):Promise<any>{
- const now=new Date().toISOString(),type=req.headers.get('content-type')||'';
- const pin:any={id:newId(),studio_id:'local-studio',created_at:now,updated_at:now,created_by:createdBy,actor_type:'human',version:1,deleted_at:null,board_id:boardId,file_ref:null,source_url:'',source_credit:'',is_own:false,note:'',tags:[],palette:[],linked_type:null,linked_id:null,annotations:[],meta:{kind:'idea',title:''}};
+ const type=req.headers.get('content-type')||'';const pin=blankPin(boardId,createdBy);
  const text=(v:unknown,max:number)=>String(v??'').slice(0,max);
  if(type.startsWith('application/json')||type.startsWith('text/')){
   const raw=type.startsWith('text/')?{url:(await req.text()).trim()}:await req.json().catch(()=>null) as any;if(!raw)return json({error:'Send an image, or JSON with url / note.'},400);
@@ -125,8 +126,18 @@ async function readCard(req:Request,env:Env,url:URL,owner:string,boardId:string,
   pin.file_ref=newId();await env.FILES.put(owner+'/'+pin.file_ref,stripMetadata(new Uint8Array(bytes),kind),{httpMetadata:{contentType:kind}});
   const src=text(url.searchParams.get('source'),2000);pin.source_url=/^https?:\/\//i.test(src)?src:'';pin.meta={kind:'image',title:text(url.searchParams.get('title'),200)};pin.source_credit=text(url.searchParams.get('credit'),200);
  }
- if(pin.file_ref)pin.palette=(url.searchParams.get('palette')||'').split(',').filter(c=>/^#[0-9a-f]{6}$/i.test(c)).slice(0,8);
+ if(pin.file_ref)pin.palette=okPalette(url.searchParams.get('palette'));
  return pin;
+}
+/** Several images in one multipart request (fields: image × n, palette × n in the same order, title). Every image is checked before any is stored. */
+async function readImages(req:Request,maxBytes:number){
+ const form=await req.formData().catch(()=>null);if(!form)return json({error:'Send the images again.'},400);
+ const files=form.getAll('image').filter((f):f is File=>typeof f!=='string'),palettes=form.getAll('palette').map(String);
+ if(!files.length)return json({error:'Choose an image.'},400);if(files.length>ADD_BATCH)return json({error:`Up to ${ADD_BATCH} images at a time.`},400);
+ const images:{bytes:Uint8Array<ArrayBuffer>;kind:string;palette:string[]}[]=[];
+ for(const [i,f] of files.entries()){const bytes=new Uint8Array(await f.arrayBuffer());if(!bytes.byteLength||bytes.byteLength>maxBytes)return json({error:`Image too large (${Math.round(maxBytes/1048576)} MB max).`},413);
+  const kind=sniffImage(bytes.subarray(0,16));if(!kind)return json({error:'Images only.'},415);images.push({bytes,kind,palette:okPalette(palettes[i]||'')});}
+ return {images,title:String(form.get('title')||'').slice(0,200)};
 }
 async function capture(req:Request,env:Env,url:URL,owner:string){
  const {results}=await env.DB.prepare("SELECT data,seq FROM records WHERE owner=? AND kind='boards' ORDER BY seq").bind(owner).all();
@@ -262,14 +273,22 @@ async function shareApi(req:Request,env:Env,url:URL,token:string,rest:string){
  if(rest==='/pins'&&req.method==='POST'){
   if(share.permission!=='contribute')return json({error:'This link can’t add cards.'},403);
   const g=guestId(req);if(!g)return json({error:'Reload the page and try again.'},400);
+  const many=(req.headers.get('content-type')||'').startsWith('multipart/form-data')?await readImages(req,GUEST_FILE):null;if(many instanceof Response)return many;
+  const n=many?many.images.length:1;
   const added=await env.DB.prepare("SELECT COUNT(*) n,COALESCE(SUM(json_extract(data,'$.created_by')=?3),0) mine FROM records WHERE owner=?1 AND kind='pins' AND json_extract(data,'$.board_id')=?2 AND json_extract(data,'$.created_by') LIKE 'guest:%' AND json_extract(data,'$.created_at')>?4").bind(share.owner,share.board_id,'guest:'+g,new Date(Date.now()-86400_000).toISOString()).first() as any;
-  if(added&&(added.n>=ADD_PER_BOARD||added.mine>=ADD_PER_GUEST))return json({error:'That’s the limit for today. Please send more tomorrow.'},429);
-  const pin=await readCard(req,env,url,share.owner,share.board_id,'guest:'+g,GUEST_FILE);if(pin instanceof Response)return pin;
-  pin.contributor_name=String(url.searchParams.get('name')||'').trim().slice(0,60)||'Client';
-  const writes=[env.DB.prepare(UPSERT).bind(share.owner,'pins',pin.id,pin.updated_at,JSON.stringify(pin))];
+  const left=Math.min(ADD_PER_BOARD-Number(added?.n||0),ADD_PER_GUEST-Number(added?.mine||0));
+  if(n>left)return json({error:left>0?`You can add ${left} more today. Choose fewer images.`:'That’s the limit for today. Please send more tomorrow.'},429);
+  let pins:any[];
+  if(many){pins=many.images.map(()=>({...blankPin(share.board_id,'guest:'+g)}));
+   // All-or-nothing: every file is stored before the cards are written in one batch; files of a failed batch are removed again.
+   await Promise.all(pins.map((p,i)=>{const {bytes,kind,palette}=many.images[i];p.file_ref=newId();p.palette=palette;p.meta={kind:'image',title:many.title};return env.FILES.put(share.owner+'/'+p.file_ref,stripMetadata(bytes,kind),{httpMetadata:{contentType:kind}});}));}
+  else{const pin=await readCard(req,env,url,share.owner,share.board_id,'guest:'+g,GUEST_FILE);if(pin instanceof Response)return pin;pins=[pin];}
+  const name=String(url.searchParams.get('name')||'').trim().slice(0,60)||'Client';
+  const writes=pins.map(p=>{p.contributor_name=name;return env.DB.prepare(UPSERT).bind(share.owner,'pins',p.id,p.updated_at,JSON.stringify(p));});
   // A link to chosen cards also shows the cards its clients add.
-  if(share.only)writes.push(env.DB.prepare("UPDATE shares SET pin_ids=json_insert(pin_ids,'$[#]',?) WHERE token=?").bind(pin.id,share.token));
-  await env.DB.batch(writes);return json({pin:{...publicPin(pin),mine:true}});
+  if(share.only)for(const p of pins)writes.push(env.DB.prepare("UPDATE shares SET pin_ids=json_insert(pin_ids,'$[#]',?) WHERE token=?").bind(p.id,share.token));
+  try{await env.DB.batch(writes);}catch(e){await Promise.all(pins.filter(p=>p.file_ref).map(p=>env.FILES.delete(share.owner+'/'+p.file_ref).catch(()=>{})));throw e;}
+  const out=pins.map(p=>({...publicPin(p),mine:true}));return json(many?{pins:out}:{pin:out[0]});
  }
  const own=rest.match(/^\/pins\/([0-9A-Za-z_-]{1,64})$/);
  if(own&&req.method==='DELETE'){

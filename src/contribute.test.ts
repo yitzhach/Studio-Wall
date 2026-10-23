@@ -66,3 +66,23 @@ it('lets a client remove only the cards they added, as a soft delete',async()=>{
  const stored=JSON.parse((sql.prepare("SELECT data FROM records WHERE id=?").get(pin.id) as any).data);
  expect(stored.deleted_at).toBeTruthy();expect(stored.version).toBe(2);expect(stored.contributor_name).toBe('Ana');expect(stored.deleted_by).toBe(stored.created_by);
 });
+
+it('adds several images in one request, all or nothing',async()=>{
+ const add='f'.repeat(32),chosen='9'.repeat(32);link(add,'contribute');link(chosen,'contribute','["P1"]');
+ const cy='c1'.repeat(10),count=()=>(sql.prepare("SELECT COUNT(*) n FROM records WHERE kind='pins'").get() as any).n;
+ const form=(n:number,bad=-1)=>{const f=new FormData();f.set('title','Tiles');for(let i=0;i<n;i++){f.append('image',new Blob([i===bad?Uint8Array.from([1,2,3]):PNG],{type:'image/png'}),'x.png');f.append('palette',i?'#112233':'#aabbcc,nope');}return f;};
+ const send=(token:string,body:FormData,g=cy)=>call(`/api/s/${token}/pins?name=Cy`,{method:'POST',body},g);
+ const r=await send(add,form(3));expect(r.status).toBe(200);const {pins}=await r.json() as any;
+ expect(pins).toHaveLength(3);expect(pins.map((p:any)=>p.palette)).toEqual([['#aabbcc'],['#112233'],['#112233']]);
+ expect(pins.every((p:any)=>p.mine&&p.contributor==='Cy'&&p.meta.title==='Tiles'&&files.has('me@x/'+p.file_ref))).toBe(true);
+ // One unreadable file, too many files, or more than today's allowance: nothing is stored.
+ const before=count(),stored=files.size;
+ expect((await send(add,form(3,1))).status).toBe(415);
+ expect((await send(add,form(11))).status).toBe(400);
+ for(let i=0;i<20;i++)await call(`/api/s/${add}/pins`,{method:'POST',headers:{'content-type':'application/json'},body:'{"note":"x"}'},cy);
+ const over=await send(add,form(3));expect(over.status).toBe(429);expect((await over.json() as any).error).toContain('2 more today');
+ expect(count()).toBe(before+20);expect(files.size).toBe(stored);
+ // A chosen-cards link shows every image its client added.
+ const two=(await (await send(chosen,form(2),'d2'.repeat(10))).json() as any).pins.map((p:any)=>p.id);
+ expect((await (await call(`/api/s/${chosen}`)).json() as any).pins.map((p:any)=>p.id).sort()).toEqual(['P1',...two].sort());
+});

@@ -6,6 +6,7 @@ Updated: 2026-10-23. Start here in a new chat; no old conversation is needed.
 - **Merging:** the user allows the agent to merge its own PRs once tests and build pass (2026-10-22). Main deploys automatically.
 - **Shipped 2026-10-22/23, not yet tried by the user:** owner "Client picks" review (PR #13) and client contributions through links (PR #14). Both live: checked 2026-10-23 via the Cloudflare connector — the deployed `studio-wall` Worker's `worker/index.ts` and `worker/strip.ts` are byte-identical to main after the PR #14 merge (contain `contributor_name`, `ADD_PER_GUEST`).
 - **Deployed 2026-10-23:** PRs #15 (share page layout, 16 px fields on touch screens) and #16 (clients remove their own added cards). Workers Builds for both main merges succeeded (13:24 and 13:28 UTC); the deployed Worker source is byte-identical to main at 784acb8 (contains "You can only remove cards you added").
+- **Deployed 2026-10-23 (later):** PR #19 (owner told when a client removes a card) — the deployed `studio-wall` Worker contains `deleted_by: "guest:" + g` (built from main 51a28dc, checked via the Cloudflare connector). Multi-image client adds: see Latest update for its PR and deploy check.
 - **To try on devices (user):** (1) iPhone Safari, client link with *add cards*: open "+ Add to this board", tap each field — the page should not zoom in; add a photo from the library and from the camera, a link, a note; then Remove one of your cards and check it lands in the owner app's Recently deleted after sync and restores. (2) Same link on a desktop browser: the Conversation section is one column. (3) Owner app on iPhone: tapping search or a dialog field should no longer zoom. (4) Older open items: plain/password/chosen-card links in a private window, sync between phone and desktop, HEIC upload on desktop Chrome.
 - **Live:** https://studio-wall.bobdylan2000.workers.dev (Cloudflare Worker `studio-wall`, deploys automatically from `main` via Workers Builds: `npm run build` then `npx wrangler deploy`). Whole site is behind Cloudflare Access (team `frosty-block-644b`, Owner policy = user's email, one-time PIN). PR preview builds fail instantly on non-production branches; production builds from main succeed — ignore preview failures, verify via the main build log.
 - **Storage:** each browser keeps a full local copy in IndexedDB (works offline). With sync on, boards/cards/comments are also stored in D1 `studio-wall-sync` and image files in private R2 bucket `studio-wall-files` (key `email/file_ref`). So images live both locally and in Cloudflare.
@@ -23,7 +24,8 @@ Nothing is blocked on the agent. Work moves forward in this order:
 1. iPhone Safari, a client link with *View, comment and add cards*: open "+ Add to this board" and tap each field (the page should not zoom); add a photo from the library, one from the camera, a link and a note; Remove one of your added cards; in the owner app after sync, find it in Recently deleted and restore it.
 2. The same client link on a desktop browser: Conversation section in one column, add panel looks right.
 3. Owner app on iPhone: tapping search or a dialog field should not zoom.
-4. Older open checks: plain, password and chosen-card links in a private window; phone ↔ desktop sync (desktop boards and images on the phone, phone captures on desktop); HEIC upload in desktop Chrome; "Client picks" with a real client star.
+4. New (2026-10-23): on the client link, choose **several photos at once** (iPhone Photos picker: tap more than one) — all should appear, each "Added by <name>". Then Remove one as the client: within ~20 s the owner app shows "<name> removed a card from <board> · see Recently deleted", the board shows a notice with a Recently deleted button, and Restore brings it back.
+5. Older open checks: plain, password and chosen-card links in a private window; phone ↔ desktop sync (desktop boards and images on the phone, phone captures on desktop); HEIC upload in desktop Chrome; "Client picks" with a real client star.
 
 **Step 2 — the user decides (the agent must ask, not build).**
 1. Client cards: keep adding straight onto the board (current), or have the owner approve them first (an approval queue)?
@@ -34,7 +36,7 @@ Nothing is blocked on the agent. Work moves forward in this order:
 **Step 3 — agent work that needs no decision** (do these in the next chat, smallest first):
 1. Fix anything Step 1 finds. (2026-10-23 round: the user had not tested yet.)
 2. ~~Tell the owner when a client removes a card~~ — done 2026-10-23, see Latest update.
-3. Several images at once on client links (today one at a time; the owner app already uploads all-or-nothing batches).
+3. ~~Several images at once on client links~~ — done 2026-10-23 (up to 10 per add, all or nothing), see Latest update.
 4. Optional: the link (Safari URL) branch for the iPhone Shortcut, documented in docs/SHARING_AND_CAPTURE.md §2.
 5. Larger, later: Next priorities #3 (backend contract) and #5 (AI through the same authorised actions). Plan these before building.
 
@@ -62,7 +64,12 @@ This round:
 I may not be able to test on devices; list what I should try when I can.
 ```
 
-## Latest update — owner is told when a client removes a card (2026-10-23)
+## Latest update — clients add several images at once (2026-10-23)
+- On a contribute link, the Images field now takes **up to 10 photos** at a time (“Up to 10 at a time.”). The page prepares every photo first (WebP ≤2400 px, HEIC/TIFF converted, palette) with “Preparing 2 of 3…”; if any photo can't be read, nothing is sent and the error names the file. All go in **one request**; the title, if given, goes on each card. 11+ photos are refused in the page.
+- Server: `POST /api/s/<token>/pins` also accepts `multipart/form-data` (fields `image` × n, `palette` × n in the same order, `title`; name still in `?name=`). Every image is size-checked (10 MB each) and sniffed before anything is stored; the daily limits count the whole batch (“You can add 2 more today. Choose fewer images.”); files go to R2, then all cards are written in one D1 batch (files removed again if that batch fails). Response `{pins:[…]}`; single-image raw bytes and JSON notes/links work as before (`{pin}`). A chosen-cards link gets every new card appended.
+- Validation: 47 tests (contribute.test.ts: 3 images → 3 cards with the right palettes and files; one unreadable file → 415 and nothing stored; 11 files → 400; over the allowance → 429 “2 more today”, nothing stored; chosen-cards link shows all added cards) and build pass. Headless Chromium at 390 px (touch) and 1280 px with real images (WebP + 2 PNG) against a mocked API: one multipart request with 3 images and 3 palettes, 3 new cards, no horizontal scroll, no script errors; 11 files → “Choose up to 10 images at a time.” and nothing sent. Not tested on a real iPhone (multi-select in the Photos picker) or in production.
+
+## Previous update — owner is told when a client removes a card (2026-10-23)
 - When a client removes a card they added (contribute link), the owner app now says so: a sync toast "Ana removed a card from Living room · see Recently deleted"; the board's "new from clients" badge and the "New from clients" bar count it; on the board a notice "Ana removed “Blue tiles” they added." with a **Recently deleted** button; in Recently deleted the row reads "Living room · removed by Ana · n days left".
 - How: the server's client delete now also stores `deleted_by: guest:<id>` on the pin (worker/index.ts). `snapshot()` returns `removed` = pins deleted by a guest within the 30-day window (src/data.ts). `pin.restore` clears `deleted_by`, so restoring removes the notice, and a later owner delete is not reported as a client removal. Removals before this change have no `deleted_by` and are not reported.
 - Validation: 46 tests (contribute.test.ts: stored `deleted_by` equals the adder; sync.test.ts: the removal syncs into `removed`, restore clears it, owner re-delete not reported) and build pass. Headless Chromium at 390 px (touch) and 1280 px against a mocked sync API: toast, badge, board notice, Recently deleted row, restore → notice gone and card back; no horizontal scroll, no script errors. Not tested in production.
@@ -87,7 +94,7 @@ I may not be able to test on devices; list what I should try when I can.
 - `optimizeImage` now falls back to JPEG 0.88 when the browser can't encode WebP (it used to return a large PNG). Affects the main app too.
 - Owner app: sidebar/board badges, the "New from clients" bar and a sync toast count added cards; captions say "Added by …".
 - Validation: 44 tests (new src/contribute.test.ts runs the real Worker against node:sqlite + in-memory R2: 403 on comment-only links, note/link/image adds, palette filtering, 415/400 on bad input, image served through the link, chosen-card link shows the added card, per-client daily limit) and build pass; `wrangler deploy --dry-run` OK. **Not checked in a browser** (the add panel's look on phone), not tested in production.
-- Not built: approval queue for client cards, client deleting their own card, multi-image add.
+- Not built: approval queue for client cards. (Client remove and multi-image add came later.)
 
 ## Previous update — owner review of client picks (2026-10-22)
 - On a board, the owner sees a **Client picks** filter (shown only when a client has starred a card through a share link). It lists starred cards most-starred first, with chips per client ("Ben 2", "Ana 1"; keyed by guest id, so two clients with the same name stay separate) to see one client's picks. Cards show "★ n clients" (names on hover); the card detail says "Starred by Ana, Ben". Select visible → Share selected / Copy / Present works on the filtered picks.
