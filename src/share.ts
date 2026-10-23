@@ -2,9 +2,10 @@
 import './style.css';
 import {openGallery} from './viewer';
 import type {Pin} from './data';
-type SharedPin={id:string;file_ref:string|null;meta:{kind:'image'|'idea'|'link';title:string};source_credit:string;is_own:boolean;source_url:string;note:string;palette:string[]};
+import {IMAGE_ACCEPT,optimizeImage,palette} from './media';
+type SharedPin={id:string;file_ref:string|null;meta:{kind:'image'|'idea'|'link';title:string};source_credit:string;is_own:boolean;source_url:string;note:string;palette:string[];contributor?:string};
 type Comment={id:string;pin_id:string|null;text:string;author:string;created_at:string};
-type Shared={board:{name:string;description:string};permission:'view'|'comment';expires_at:string|null;pins:SharedPin[];comments:Comment[];starred:string[]};
+type Shared={board:{name:string;description:string};permission:'view'|'comment'|'contribute';expires_at:string|null;pins:SharedPin[];comments:Comment[];starred:string[]};
 const root=document.querySelector<HTMLElement>('#share')!;
 const token=location.pathname.split('/')[2]||'';
 const esc=(s:unknown)=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]!));
@@ -16,14 +17,15 @@ const api=async(path:string,init:RequestInit={})=>{const r=await fetch(`/api/s/$
 const src=(p:SharedPin)=>p.file_ref?`/api/s/${token}/files/${p.file_ref}`:null;
 let data:Shared,about:string|null=null;
 
-function card(p:SharedPin){const img=src(p),stars=data.starred.includes(p.id),count=data.comments.filter(c=>c.pin_id===p.id).length,can=data.permission==='comment';
- return `<div class="pin-wrap"><button class="pin ${img?'':'text-pin'}" data-open="${p.id}">${img?`<img src="${img}" alt="${esc(p.meta.title||'Reference')}" loading="lazy" draggable="false">`:`<div class="idea-content"><p>${esc(p.note||p.meta.title||p.source_url)}</p></div>`}<div class="caption"><strong>${stars?'★ ':''}${esc(p.meta.title||(p.meta.kind==='idea'?'A thought':'Untitled reference'))}</strong><span>${esc(p.is_own?'Artist’s own work':p.source_credit||'')}${count?` · ${count} comment${count===1?'':'s'}`:''}</span></div></button>
+function card(p:SharedPin){const img=src(p),stars=data.starred.includes(p.id),count=data.comments.filter(c=>c.pin_id===p.id).length,can=data.permission!=='view';
+ return `<div class="pin-wrap"><button class="pin ${img?'':'text-pin'}" data-open="${p.id}">${img?`<img src="${img}" alt="${esc(p.meta.title||'Reference')}" loading="lazy" draggable="false">`:`<div class="idea-content"><p>${esc(p.note||p.meta.title||p.source_url)}</p></div>`}<div class="caption"><strong>${stars?'★ ':''}${esc(p.meta.title||(p.meta.kind==='idea'?'A thought':'Untitled reference'))}</strong><span>${esc(p.contributor?`Added by ${p.contributor}`:p.is_own?'Artist’s own work':p.source_credit||'')}${count?` · ${count} comment${count===1?'':'s'}`:''}</span></div></button>
  ${p.source_url?`<a class="share-source" href="${esc(p.source_url)}" target="_blank" rel="noopener noreferrer">Open link ↗</a>`:''}${can?`<div class="share-actions"><button data-star="${p.id}" aria-pressed="${stars}" aria-label="${stars?'Remove star':'Star this'}">${stars?'★ Starred':'☆ Star'}</button><button data-about="${p.id}">Comment</button></div>`:''}</div>`;}
 
 function render(){
- const can=data.permission==='comment',name=store.get('studio-wall-guest-name')||'',aboutPin=data.pins.find(p=>p.id===about);
+ const can=data.permission!=='view',adds=data.permission==='contribute',name=store.get('studio-wall-guest-name')||'',aboutPin=data.pins.find(p=>p.id===about);
  document.title=`${data.board.name} · Studio Wall`;
- root.innerHTML=`<header class="share-head"><div class="eyebrow">A BOARD SHARED WITH YOU</div><h1>${esc(data.board.name)}</h1>${data.board.description?`<p class="intro">${esc(data.board.description)}</p>`:''}<p class="share-meta">${data.pins.length} reference${data.pins.length===1?'':'s'} · ${can?'Tap ☆ to star favourites and leave comments for the artist':'View only'}${data.expires_at?` · link open until ${new Date(data.expires_at).toLocaleDateString(undefined,{month:'short',day:'numeric'})}`:''}</p><button class="secondary" id="theme-toggle" aria-label="Toggle light or dark">${document.documentElement.dataset.theme==='dark'?'Light':'Dark'} mode</button></header>
+ root.innerHTML=`<header class="share-head"><div class="eyebrow">A BOARD SHARED WITH YOU</div><h1>${esc(data.board.name)}</h1>${data.board.description?`<p class="intro">${esc(data.board.description)}</p>`:''}<p class="share-meta">${data.pins.length} reference${data.pins.length===1?'':'s'} · ${adds?'Star favourites, comment, and add your own images or ideas':can?'Tap ☆ to star favourites and leave comments for the artist':'View only'}${data.expires_at?` · link open until ${new Date(data.expires_at).toLocaleDateString(undefined,{month:'short',day:'numeric'})}`:''}</p><button class="secondary" id="theme-toggle" aria-label="Toggle light or dark">${document.documentElement.dataset.theme==='dark'?'Light':'Dark'} mode</button></header>
+ ${adds?`<details class="share-add"${data.pins.length?'':' open'}><summary>+ Add to this board</summary><form id="add-form"><label>Your name<input name="name" maxlength="60" value="${esc(name)}" placeholder="So the artist knows who added it"></label><label>Image<input name="image" type="file" accept="${IMAGE_ACCEPT}"></label><label>Title<input name="title" maxlength="200" placeholder="Optional"></label><label>Or a link<input name="url" type="url" inputmode="url" maxlength="2000" placeholder="https://…"></label><label>Note<textarea name="note" rows="2" maxlength="4000" placeholder="An idea, or why you chose this"></textarea></label><p class="error" role="alert"></p><button class="primary">Add to board</button></form></details>`:''}
  <section class="masonry">${data.pins.map(card).join('')||'<p class="hint">This board is empty for now.</p>'}</section>
  <section class="feedback share-feedback"><div class="eyebrow">CONVERSATION</div>${data.comments.map(c=>`<article><strong>${esc(c.author)}${c.pin_id?` <small>on ${esc(data.pins.find(p=>p.id===c.pin_id)?.meta.title||'an image')}</small>`:''}</strong><p>${esc(c.text)}</p></article>`).join('')||'<p class="hint">No comments yet.</p>'}
  ${can?`<form id="comment-form">${aboutPin?`<p class="share-about">Commenting on <strong>${esc(aboutPin.meta.title||'this image')}</strong> <button type="button" id="clear-about">Comment on the whole board instead</button></p>`:''}<label>Your name<input name="name" maxlength="60" value="${esc(name)}" placeholder="So the artist knows who wrote"></label><label>Comment<textarea name="text" rows="3" maxlength="2000" required placeholder="What do you love, or what would you change?"></textarea></label><p class="error" role="alert"></p><button class="primary">Send to artist</button></form>`:''}</section>`;
@@ -40,6 +42,16 @@ function bind(){
  if(form)form.onsubmit=async e=>{e.preventDefault();const v=Object.fromEntries(new FormData(form)) as Record<string,string>;const btn=form.querySelector('button.primary') as HTMLButtonElement;btn.disabled=true;store.set('studio-wall-guest-name',v.name.trim());
   try{const {comment}=await api('/feedback',{method:'POST',body:JSON.stringify({pin_id:about,text:v.text,name:v.name})});data.comments.push(comment);about=null;render();}
   catch(err){form.querySelector('.error')!.textContent=(err as Error).message;btn.disabled=false;}};
+ const add=root.querySelector<HTMLFormElement>('#add-form');
+ if(add)add.onsubmit=async e=>{e.preventDefault();const f=new FormData(add),btn=add.querySelector('button')!,err=add.querySelector('.error')!;const file=f.get('image') as File|null,v=(k:string)=>String(f.get(k)||'').trim();
+  if(!file?.size&&!v('url')&&!v('note')){err.textContent='Choose an image, or add a link or a note.';return;}
+  btn.disabled=true;err.textContent='';store.set('studio-wall-guest-name',v('name'));
+  try{const q=new URLSearchParams({name:v('name')});let body:BodyInit,type='application/json';
+   if(file?.size){btn.textContent='Preparing image…';const img=await optimizeImage(file);q.set('title',v('title'));q.set('palette',(await palette(img).catch(()=>[])).join(','));body=img;type=img.type;}
+   else body=JSON.stringify({title:v('title'),url:v('url'),note:v('note')});
+   btn.textContent='Adding…';const {pin}=await api('/pins?'+q,{method:'POST',body,headers:{'content-type':type}});data.pins.unshift(pin);render();
+   root.querySelector('.share-add')?.removeAttribute('open');root.querySelector<HTMLElement>(`[data-open="${pin.id}"]`)?.scrollIntoView?.({block:'center'});}
+  catch(x){err.textContent=(x as Error).message;btn.disabled=false;btn.textContent='Add to board';}};
 }
 // A password link: the server answers 401 until /unlock sets its cookie, which the page and its images then send.
 function askPassword(){

@@ -63,3 +63,4 @@
 .pick-clients button.chosen{background:var(--accent);border-color:var(--accent);color:var(--accent-ink)}
 .client-stars,.client-starred{color:var(--accent)}
 @media(max-width:760px){.filters{flex-wrap:wrap}}
+.share-add{max-width:760px;margin:0 0 22px;padding:12px 16px;border:1px solid var(--line);border-radius:12px}.share-add summary{cursor:pointer;font-weight:600}.share-add form{display:grid;gap:10px;margin-top:12px}
