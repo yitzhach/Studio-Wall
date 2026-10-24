@@ -15,7 +15,7 @@ Updated: 2026-10-24. Start here in a new chat; no old conversation is needed.
 - **Access steps done 2026-10-22:** user created Access app "Studio Wall client links" (paths `s/*`, `api/s/*`, `assets/*` on studio-wall.bobdylan2000.workers.dev; policy "Clients" = Bypass/Everyone) and a service token "Studio Wall Shortcut" with a Service Auth policy "Shortcut" on the main app ("bobdylan2000.workers.dev"). Checked from outside without login: `/s/<token>` 200, `/api/s/<unknown 32-char token>/board` 404 "no longer active" (reaches the Worker), `/assets/*` 200; `/`, `/api/boards`, `/api/capture` still redirect to Access login. The reusable "Shortcut" policy was first created but not attached to the main app (app_count 0), so the Shortcut got the Access login page (empty notification, nothing in D1); the agent attached it via the Cloudflare API connector (main app policies now Owner 1, Shortcut 2). Service token itself not testable by the agent (secret stays with the user).
 - **iPhone Shortcut works (2026-10-22):** built per docs/SHARING_AND_CAPTURE.md §2 (photos-only version: Receive Images from Share Sheet → Convert to JPEG → Resize 2400 → Get Contents of URL POST /api/capture with the two CF-Access-Client-* headers, body File = Resized Image → Show Notification). First capture landed in D1 (pin created_by `shortcut`, with image, 16:41 UTC). iOS asks once to allow sending photos to the site ("Always Allow"). Not yet added: the link (Safari URL) branch.
 - **Connectors:** the session now has the Cloudflare API connector (mcp.cloudflare.com, Access read/edit), so Access apps/policies can be checked and changed by the agent; the older Workers-bindings connector still serves D1 queries.
-- **Next steps:** see "What happens next" right below (user tests → user decisions → agent work), plus the prompt for starting a new chat. The big next piece is planned in docs/backend-and-ai-plan.md and waits on the user's decisions.
+- **Next steps:** the user approved the backend + AI plan (docs/backend-and-ai-plan.md) on 2026-10-24. Next is Stage 1 in Art-Talk-Back, then Stage 2 here. See "What happens next" and the prompt for a new chat.
 
 ## What happens next (2026-10-24)
 Step 3 of the last round is done except the backend + AI work, which now has a written plan: **docs/backend-and-ai-plan.md**. Building it needs the user's answers first. Order:
@@ -28,63 +28,65 @@ Step 3 of the last round is done except the backend + AI work, which now has a w
 5. iPhone Shortcut: add the link branch (docs/SHARING_AND_CAPTURE.md §2 step 4), then share a Safari page to it; the link should land in the Inbox.
 6. Older open checks: plain, password and chosen-card links in a private window; phone ↔ desktop sync (desktop boards and images on the phone, phone captures on desktop); HEIC upload in desktop Chrome; "Client picks" with a real client star.
 
-**Step 2 — the user decides (the agent must ask, not build).**
-Backend + AI plan (docs/backend-and-ai-plan.md §2; recommendations there):
-1. Move Studio Wall's data onto the studio platform's `studio-api` (it's the spec's Inspiration Board; the only way the assistant can reach the boards)? Recommended yes.
-2. Owner sign-in: the studio's email code / password inside the app, with Cloudflare Access left in front during the move? Recommended yes.
-3. Client links rebuilt in studio-api, same `/s/<token>` address (0 live links today, nothing to carry over)? Recommended yes.
-4. After the move, keep the old D1 `studio-wall-sync` and R2 `studio-wall-files` read-only for 30 days, then the user decides about deleting them. Agree?
-5. Automatic subject/mood tags with a model (a cost per card): recommended not now.
+**Step 2 — decisions.**
+Answered 2026-10-24 ("yes to all", the plan's recommendations):
+1. Move Studio Wall's data onto `studio-api`: **yes**.
+2. Owner sign-in with the studio's email code / password inside the app, Cloudflare Access kept in front during the move: **yes**.
+3. Client links rebuilt in studio-api at the same `/s/<token>` address: **yes**.
+4. Old D1 `studio-wall-sync` and R2 `studio-wall-files` kept read-only for 30 days after the switch, then the user decides about deleting them: **yes**.
+5. Automatic subject/mood tags: **not now**, as recommended. "Yes to all" was read as accepting the recommendations; this costs money, so ask again before building it.
 
-Older, still open:
-6. Client cards: keep adding straight onto the board (current), or have the owner approve them first (an approval queue)?
-7. Cloudflare Images for resizing/re-encoding images on the server: costs money and needs setup. Yes / not now?
-8. Email invitations for client links: need an email service and its API key (a secret). Yes / not now?
-9. Owner app search field shows a second inner border (long-standing). Keep or remove?
+Still open (the agent asks, never builds on a guess):
+6. Client cards: keep adding straight onto the board (current), or have the owner approve them first?
+7. Cloudflare Images (costs money): yes / not now?
+8. Email invitations for client links (email service + API key): yes / not now?
+9. Owner app search field's second inner border: keep or remove?
 
 **Step 3 — agent work.**
 1. Fix anything Step 1 finds.
-2. If decision 1 is yes: **Stage 1** of docs/backend-and-ai-plan.md, in yitzhach/Art-Talk-Back (the platform repo; its default branch is `claude/next-steps-y4vrwv`, not `main`). Follow that repo's CLAUDE.md, the backend-builder skill and docs/SHIPPING.md. Write `docs/phase-5-studio-wall.md` and the D-numbers there first. Then add migration `0008_boards_pins.sql`, the Zod shapes, the actions tagged `apps: ["studio-wall"]`, routes, sync, `file.attach` to a pin, tenancy tests and `docs/openapi.json`. Then Stage 2 here (service binding `API` → `studio-api`, forward `/v1/*`). Stages 3–7 follow in later chats, one at a time.
-3. If decision 1 is no: nothing large is queued. Small Studio Wall polish only, after asking.
-4. Done in the 2026-10-23 round: owner told of client removals (#19), multi-image client adds (#20), Shortcut first-link fix (#21).
+2. **Now (decision 1 is yes): Stage 1** of docs/backend-and-ai-plan.md, in yitzhach/Art-Talk-Back (the platform repo; its default branch is `claude/next-steps-y4vrwv`, not `main`). Follow that repo's CLAUDE.md, the backend-builder skill and docs/SHIPPING.md. Write `docs/phase-5-studio-wall.md` and the D-numbers there first. Then add migration `0008_boards_pins.sql`, the Zod shapes, the actions tagged `apps: ["studio-wall"]`, routes, sync, `file.attach` to a pin, tenancy tests and `docs/openapi.json`. Then Stage 2 here (service binding `API` → `studio-api`, forward `/v1/*`). Stages 3–7 follow in later chats, one at a time.
+3. Done in the 2026-10-23 round: owner told of client removals (#19), multi-image client adds (#20), Shortcut first-link fix (#21).
 
 **Start a new chat?** Yes. Everything is merged and deployed, and this file plus docs/backend-and-ai-plan.md carry what a new chat needs. Paste this prompt:
 
 ```
 Work in yitzhach/Studio-Wall and yitzhach/Art-Talk-Back (the studio platform).
-Start by reading Studio-Wall's HANDOFF.md ("Current state", "What happens next"
-and the newest "Latest update"), AGENTS.md and docs/backend-and-ai-plan.md.
-Then read Art-Talk-Back's CLAUDE.md, docs/HANDOFF.md, docs/phase-5-booth.md
-(the pattern to follow) and docs/SHIPPING.md. Art-Talk-Back's default branch
-is claude/next-steps-y4vrwv. Work from each repo's current default branch.
-You may merge your own PRs once tests and build pass; Studio-Wall's main
-deploys to Cloudflare automatically, and Art-Talk-Back ships per its
-SHIPPING.md (app before platform). Verify deploys by the deployed Worker code
-via the Cloudflare connector, not GitHub checks.
-Keep HANDOFF.md current with every change (and Art-Talk-Back's docs/HANDOFF.md,
-DECISIONS.md and CHANGELOG.md when you change that repo).
+Read Studio-Wall's HANDOFF.md ("Current state", "What happens next", newest
+"Latest update"), AGENTS.md and docs/backend-and-ai-plan.md. Then read
+Art-Talk-Back's CLAUDE.md, docs/HANDOFF.md, docs/phase-5-booth.md (the pattern
+to follow) and docs/SHIPPING.md. Art-Talk-Back's default branch is
+claude/next-steps-y4vrwv; Studio-Wall's is main. Work from each current
+default branch. You may merge your own PRs once tests and build pass;
+Studio-Wall's main deploys to Cloudflare automatically, and Art-Talk-Back
+ships per its SHIPPING.md (app before platform). Verify deploys by the
+deployed Worker code via the Cloudflare connector, not GitHub checks.
+Keep Studio-Wall's HANDOFF.md current with every change, and Art-Talk-Back's
+docs/HANDOFF.md, DECISIONS.md and CHANGELOG.md when you change that repo.
 
+Decisions are recorded in HANDOFF "What happens next" Step 2 (move onto
+studio-api: yes; studio sign-in with Access kept during the move: yes; client
+links rebuilt in studio-api: yes; old D1/R2 read-only 30 days: yes;
+auto-tags: not now).
 Device test results: <paste what worked / what didn't, or "not tested yet">
-Decisions (numbers from HANDOFF "What happens next" Step 2):
-1 move onto studio-api: <yes / no>
-2 studio sign-in, Access kept during the move: <yes / other>
-3 client links rebuilt in studio-api: <yes / other>
-4 keep old D1/R2 read-only 30 days: <yes / other>
-5 auto-tags: <not now / yes>
-6-9 older ones: <answers, or "none yet">
 
 This round:
 1. Fix anything my device tests found.
-2. If I said yes to 1: build Stage 1 of docs/backend-and-ai-plan.md in
-   Art-Talk-Back (plan file and D-numbers first, then migration, actions,
-   sync, tests, OpenAPI), ship it, then Stage 2 in Studio-Wall. Stop after
-   Stage 2 and tell me what Stage 3 needs from me.
-3. Ask me before anything that needs my decision, money, secrets, a new
+2. Build Stage 1 of docs/backend-and-ai-plan.md in Art-Talk-Back: the phase
+   plan (docs/phase-5-studio-wall.md) and D-numbers first, then migration
+   0008, the actions, routes, sync, file attach, tenancy tests and OpenAPI.
+   Ship it and check the production API deploy.
+3. Then Stage 2 in Studio-Wall (service binding API -> studio-api, forward
+   /v1/*). Stop after Stage 2 and tell me what Stage 3 needs from me.
+4. Ask me before anything that needs my decision, money, secrets, a new
    Worker's first deploy, or deleting data.
 I may not be able to test on devices; list what I should try when I can.
 ```
 
-## Latest update — plan for the studio backend and the assistant (2026-10-24)
+## Latest update — plan approved (2026-10-24)
+- The user answered the plan's decisions with "yes to all": move onto studio-api, studio sign-in with Access kept during the move, client links rebuilt in studio-api, old D1/R2 read-only for 30 days. Auto-tags are "not now", as recommended (it costs money, so ask before building it). Recorded in Step 2 above and in docs/backend-and-ai-plan.md §2. The older decisions 6–9 are still open.
+- Next: Stage 1 (Art-Talk-Back), then Stage 2 (this repo). The prompt for a new chat is above.
+
+## Previous update — plan for the studio backend and the assistant (2026-10-24)
 - Wrote **docs/backend-and-ai-plan.md** (Next priorities #3 and #5). It covers how Studio Wall moves onto the studio platform's `studio-api` (yitzhach/Art-Talk-Back; as Booth Studio did), and then how the assistant works on boards and cards through the same actions.
 - Contents: the data contract (boards, pins, board_feedback, shares; actors; actions; sync; images) and seven stages, each with a gate. The stages are: platform tables → app binding → studio sign-in and sync → import the library → client links on the platform → switch over → the assistant.
 - Five decisions for the user come first (Step 2 above). Nothing is built.
@@ -303,7 +305,7 @@ Eight data-layer tests and one DOM integration flow (nine tests total) cover tra
 0. User confirmed the earlier Cloudflare deployment. Verify this new main commit deploys, then test direct selection/group drag, detail zoom, gallery arrows/swipe, PDF printing and local stars/notes on real devices. A different hostname has separate IndexedDB data: export/import boards to transfer from the private review site.
 1. Open the private review URL on iPhone; try sample, upload 3 images/camera, inspect palettes/credits, close/reopen, install to Home Screen and test airplane mode. Verify static shell caching under chosen host authentication.
 2. (Done 2026-10-18 via Apple Shortcut + /api/capture; see docs/SHARING_AND_CAPTURE.md.) Validate actual share-sheet receiving support on target browsers before implementing Web Share Target. iPhone support must not be assumed. Native camera picker and file import exist now.
-3. (Planned 2026-10-24 in docs/backend-and-ai-plan.md; waits on the user's decisions.) Backend contract: studio identity, asset registry/file_ref, actor identity, API actions, outbox idempotency/revisions/conflicts, authorized image delivery. Do not send existing provisional events until migration semantics are settled.
+3. (Planned and approved 2026-10-24: docs/backend-and-ai-plan.md.) Backend contract: studio identity, asset registry/file_ref, actor identity, API actions, outbox idempotency/revisions/conflicts, authorized image delivery. Do not send existing provisional events until migration semantics are settled.
 4. (Mostly done 2026-10-18: revocable/expiring per-board links with view/comment, stars, comments, OG previews; password links and chosen-card links 2026-10-21. Remaining: invite-only links. Owner favourites review done 2026-10-22; client contributions 2026-10-23, clients removing their own added cards 2026-10-23.) Client access: owner-selected full board or a curated subset (scope pins and media, never the whole collection); client stars, pin notes and an owner review of favorites. Revocable/expiring board links, server-enforced view/comment/contribute roles, guest identity, optional login. Comments and contributions must be scoped by board. Do not treat the preview UI as access control.
 5. (Planned 2026-10-24 in docs/backend-and-ai-plan.md, stage 7.) Connect AI through the same authorized action endpoint. Never give an assistant direct database/bucket access.
 6. (Done 2026-10-18: colour-word search, atomic single-board ZIP import, all-or-nothing multi-image upload via `pin.save_batch`.) Soft-deleted blobs currently retained for future sync; design tombstone retention and cleanup.

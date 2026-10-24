@@ -1,8 +1,11 @@
 # Plan: Studio Wall on the studio backend, then the assistant
 
 Written 2026-10-24. Covers HANDOFF "Next priorities" #3 (backend contract) and #5 (AI through the
-same authorised actions). **Nothing here is built yet.** Section 2 lists the user's decisions. Stage 1
-starts only after those answers.
+same authorised actions). **Nothing here is built yet.**
+
+**Approved by the user on 2026-10-24.** Decisions 1–4 below are yes. Decision 5 (auto-tags) is "not now"
+("yes to all" was read as accepting the recommendations; ask before building it, since it costs
+money). Next: Stage 1.
 
 ## 1. Where things stand
 
@@ -41,7 +44,7 @@ studio-api has **no** boards, pins, comments or share links yet, and no guest (c
 So the assistant can only work on Studio Wall once boards and cards live in studio-api. The order
 is fixed: **backend first, AI second.**
 
-## 2. Decisions for the user (ask; don't build before the answer)
+## 2. Decisions (answered 2026-10-24; recommendations accepted)
 
 1. **Move Studio Wall's data onto studio-api?** Recommended: yes. It is the spec's Inspiration Board.
    It gives one sign-in, cards that can link to artworks and commissions, undo and history, and it is
