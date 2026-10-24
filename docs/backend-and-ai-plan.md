@@ -1,7 +1,7 @@
 # Plan: Studio Wall on the studio backend, then the assistant
 
 Written 2026-10-24. Covers HANDOFF "Next priorities" #3 (backend contract) and #5 (AI through the
-same authorised actions). **Nothing here is built yet.**
+same authorised actions). **Built so far (2026-10-24): Stage 1 (Art-Talk-Back PR #42) and Stage 2 (this repo).** Next: Stage 3.
 
 **Approved by the user on 2026-10-24.** Decisions 1–4 below are yes. Decision 5 (auto-tags) is "not now"
 ("yes to all" was read as accepting the recommendations; ask before building it, since it costs

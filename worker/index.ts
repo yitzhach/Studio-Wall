@@ -6,8 +6,10 @@
 // A link with a password also needs an unlock cookie, issued by /api/s/<token>/unlock and scoped to that link's API path.
 // Without ACCESS_TEAM_DOMAIN, ACCESS_AUD, DB and FILES configured, the API refuses requests (fail closed).
 // Images lose their hidden metadata (GPS, camera, dates) when stored, and again when a client link serves them.
+// /v1/* goes untouched to the studio platform's studio-api through the API service binding (backend plan, stage 2):
+// the studio's own sign-in and data. Without the binding it answers 503, and nothing else here changes.
 import {stripMetadata} from './strip';
-type Env={ASSETS:{fetch(r:Request):Promise<Response>};DB?:any;FILES?:any;ACCESS_TEAM_DOMAIN?:string;ACCESS_AUD?:string};
+type Env={ASSETS:{fetch(r:Request):Promise<Response>};API?:{fetch(r:Request):Promise<Response>};DB?:any;FILES?:any;ACCESS_TEAM_DOMAIN?:string;ACCESS_AUD?:string};
 type Ctx={waitUntil(p:Promise<unknown>):void};
 const KINDS=['boards','pins','feedback'];
 const ID=/^[0-9A-Za-z_-]{1,64}$/;
@@ -317,8 +319,16 @@ async function sharePage(req:Request,env:Env,url:URL,token:string){
  return new Response(html,{headers:{'content-type':'text/html;charset=UTF-8','cache-control':'no-store','referrer-policy':'no-referrer','x-robots-tag':'noindex'}});
 }
 
+/** The studio platform's API, on this origin, as Booth Studio does it. Errors use the platform's shape. */
+async function forwardToStudio(req:Request,env:Env){
+ const down=(message:string)=>new Response(JSON.stringify({error:{code:'unavailable',message}}),{status:503,headers:{'content-type':'application/json','cache-control':'no-store'}});
+ if(!env.API)return down("The studio isn't connected to this copy of Studio Wall.");
+ try{return await env.API.fetch(req);}catch{return down("The studio can't be reached just now.");}
+}
+
 export default {async fetch(req:Request,env:Env,ctx:Ctx){
  const url=new URL(req.url);
+ if(url.pathname.startsWith('/v1/'))return forwardToStudio(req,env);
  try{
   const page=url.pathname.match(/^\/s\/([A-Za-z0-9_-]{32,64})\/?$/);if(page)return await sharePage(req,env,url,page[1]);
   if(url.pathname.startsWith('/api/')){
