@@ -3,7 +3,7 @@
 Updated: 2026-10-24. Start here in a new chat; no old conversation is needed.
 
 ## Current state (2026-10-24) — read this first
-- **Backend move, stages 1–2 (2026-10-24):** Stage 1 (boards, cards and comments in studio-api) is Art-Talk-Back PR #42; Stage 2 (this repo: `API` service binding → `studio-api`, `/v1/*` forwarded) is this round's PR. Nothing changes for the user yet: the app still syncs through `/api/sync`. See "Latest update".
+- **Backend move, stages 1–2 (2026-10-24), both in production:** Stage 1 (boards, cards and comments in studio-api) is Art-Talk-Back #42, deployed by "Deploy production API" run 155 with migration 0008. Stage 2 (this repo: `API` service binding → `studio-api`, `/v1/*` forwarded) is #25. Nothing changes for the user yet: the app still syncs through `/api/sync`. See "Latest update".
 - **Merging:** the user allows the agent to merge its own PRs once tests and build pass (2026-10-22). Main deploys automatically.
 - **Shipped 2026-10-22/23, not yet tried by the user:** owner "Client picks" review (PR #13) and client contributions through links (PR #14). Both live: checked 2026-10-23 via the Cloudflare connector — the deployed `studio-wall` Worker's `worker/index.ts` and `worker/strip.ts` are byte-identical to main after the PR #14 merge (contain `contributor_name`, `ADD_PER_GUEST`).
 - **Deployed 2026-10-23:** PRs #15 (share page layout, 16 px fields on touch screens) and #16 (clients remove their own added cards). Workers Builds for both main merges succeeded (13:24 and 13:28 UTC); the deployed Worker source is byte-identical to main at 784acb8 (contains "You can only remove cards you added").
@@ -19,7 +19,7 @@ Updated: 2026-10-24. Start here in a new chat; no old conversation is needed.
 - **Next steps:** Stage 3 (studio sign-in and sync in the app). See "What happens next" and the prompt for a new chat.
 
 ## What happens next (2026-10-24)
-Step 3 of the last round is done except the backend + AI work, which now has a written plan: **docs/backend-and-ai-plan.md**. Building it needs the user's answers first. Order:
+The backend + AI work follows **docs/backend-and-ai-plan.md**. Stages 1 and 2 are done (2026-10-24); Stage 3 is next. Order:
 
 **Step 1 — the user tests on devices (no agent needed).** Report what works and what doesn't (a screenshot helps).
 1. iPhone Safari, a client link with *View, comment and add cards*: open "+ Add to this board" and tap each field (the page should not zoom); add a photo from the library, one from the camera, a link and a note; Remove one of your added cards; in the owner app after sync, find it in Recently deleted and restore it.
@@ -45,10 +45,17 @@ Still open (the agent asks, never builds on a guess):
 
 **Step 3 — agent work.**
 1. Fix anything Step 1 finds.
-2. **Done 2026-10-24: Stages 1 and 2** (see "Latest update"). Was: Stage 1 of docs/backend-and-ai-plan.md, in yitzhach/Art-Talk-Back (the platform repo; its default branch is `claude/next-steps-y4vrwv`, not `main`). Follow that repo's CLAUDE.md, the backend-builder skill and docs/SHIPPING.md. Write `docs/phase-5-studio-wall.md` and the D-numbers there first. Then add migration `0008_boards_pins.sql`, the Zod shapes, the actions tagged `apps: ["studio-wall"]`, routes, sync, `file.attach` to a pin, tenancy tests and `docs/openapi.json`. Then Stage 2 here (service binding `API` → `studio-api`, forward `/v1/*`). Stages 3–7 follow in later chats, one at a time.
+2. **Done 2026-10-24: Stages 1 and 2** (see "Latest update"): both merged and in production.
+3. **Next: Stage 3** of docs/backend-and-ai-plan.md, in this repo:
+   - a "Studio account" panel (email code or password, from inside the app on this origin, as Booth Studio does);
+   - an adapter from local actions to studio-api ops (the mapping is in "Latest update"), pull into `library.merge`, review cards on conflicts;
+   - a setting that picks old sync or studio sync per device, so nothing changes until the user switches;
+   - gate: a two-device test against a local studio-api from an Art-Talk-Back checkout (like booth-studio `tests/two-devices.mjs`), headless Chromium at 390 px and desktop, plus a CI check that `src/vendor/studio-sdk.js` matches the platform's `bundle:esm`.
+
+   **What Stage 3 needs from the user:** nothing required. The studio account already exists: the user's email is studio-api's owner, and the emailed code or the password signs in. Optional: a staging Worker `studio-studio-wall-staging` bound to `studio-api-staging`, for trying studio sync without touching the live app. Its first deploy is the user's step, and the plan's gate doesn't need it. Decisions 6–9 above don't block Stage 3.
 3. Done in the 2026-10-23 round: owner told of client removals (#19), multi-image client adds (#20), Shortcut first-link fix (#21).
 
-**Start a new chat?** Yes. Everything is merged and deployed, and this file plus docs/backend-and-ai-plan.md carry what a new chat needs. Paste this prompt:
+**Start a new chat?** Yes, for Stage 3. Everything is merged and deployed. Paste this prompt:
 
 ```
 Work in yitzhach/Studio-Wall and yitzhach/Art-Talk-Back (the studio platform).
@@ -72,12 +79,15 @@ Device test results: <paste what worked / what didn't, or "not tested yet">
 
 This round:
 1. Fix anything my device tests found.
-2. Build Stage 1 of docs/backend-and-ai-plan.md in Art-Talk-Back: the phase
-   plan (docs/phase-5-studio-wall.md) and D-numbers first, then migration
-   0008, the actions, routes, sync, file attach, tenancy tests and OpenAPI.
-   Ship it and check the production API deploy.
-3. Then Stage 2 in Studio-Wall (service binding API -> studio-api, forward
-   /v1/*). Stop after Stage 2 and tell me what Stage 3 needs from me.
+2. Build Stage 3 of docs/backend-and-ai-plan.md in Studio-Wall: the Studio
+   account panel (code or password), the adapter from local actions to
+   studio-api ops (mapping in HANDOFF "Latest update"), pull into
+   library.merge, review cards on conflicts, and a per-device setting for
+   old sync or studio sync (old stays the default). Gate: a two-device test
+   against a local studio-api from an Art-Talk-Back checkout, and a CI check
+   of src/vendor/studio-sdk.js. Ship it and check the deploy.
+3. Stop after Stage 3 and tell me what Stage 4 (the library import) needs
+   from me.
 4. Ask me before anything that needs my decision, money, secrets, a new
    Worker's first deploy, or deleting data.
 I may not be able to test on devices; list what I should try when I can.
@@ -105,6 +115,7 @@ I may not be able to test on devices; list what I should try when I can.
   - `worker/index.ts` forwards `/v1/*` untouched, as Booth Studio does. Without the binding, or if studio-api can't be reached, it answers 503 `{error:{code:'unavailable'}}`.
   - `src/vendor/studio-sdk.js` is the platform SDK's ES-module build (D-066). Nothing imports it until Stage 3, and its CI check comes with Stage 3.
 - **Sign-in note:** Cloudflare Access still guards the whole site, including `/v1/*`. studio-api ignores Studio Wall's Access cookie (a different AUD), so the user signs in to the studio with its email code or password (decision 2).
+- **Deployed 2026-10-24:** Art-Talk-Back #42 merged first. "Deploy production API" run 155 applied migration 0008 to `studio-db-prod` (restore bookmark `0000006f-00000000-0000510e-19bb937755e91fb3bd072bf621e17ac0`, previous Worker `61df684f`). The connector shows the tables and the new code in `studio-api`. Then #25 merged (`bc6a701`). Its Workers Build on main succeeded, and the live `studio-wall` Worker has the `API` → `studio-api` binding and the `/v1/` forwarding code (checked through the Cloudflare API connector). The PR's preview build failed as preview builds always do here: `wrangler preview` wants a `previews` block for D1/R2/Access.
 - Validation:
   - 50 tests pass. New `src/studio-api.test.ts` checks that `/v1/me` and a POST reach the binding with headers, body and Set-Cookie intact, that the 503s work, and that `/`, `/v1` and `/api/*` are unchanged.
   - `npm run build` passes, and `wrangler deploy --dry-run` lists `env.API (studio-api)`.
