@@ -49,6 +49,8 @@ jobs:
           node-version: 22
           cache: npm
       - run: npm ci
+      - name: Formatting (npm run format fixes it)
+        run: npm run format:check
       - name: Unit tests
         run: npm test
       - run: npm run build

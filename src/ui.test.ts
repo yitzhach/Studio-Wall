@@ -1,63 +1,113 @@
 // @vitest-environment happy-dom
 import 'fake-indexeddb/auto';
-import {it,expect,vi} from 'vitest';
+import {it, expect, vi} from 'vitest';
 import {snapshot} from './data';
 // No sync server in tests: the API answers "not configured", so the app stays device-local.
-vi.stubGlobal('fetch',vi.fn(async()=>new Response('{}',{status:503})));
-it('creates a board, saves and edits an idea, searches, and previews feedback',async()=>{
- document.body.innerHTML='<div id="app"></div>';
- HTMLDialogElement.prototype.showModal=function(){this.open=true;};HTMLDialogElement.prototype.close=function(){this.open=false;};
- await import('./main');
- await vi.waitFor(()=>expect(document.querySelector('h1')?.textContent).toContain('All inspiration'));
- const click=(selector:string)=>{const el=document.querySelector<HTMLElement>(selector);expect(el).toBeTruthy();el!.click();};
- click('[data-action="theme"]');expect(document.documentElement.dataset.theme).toBe('light');
- click('[data-action="new-board"]');
- (document.querySelector('[name=name]') as HTMLInputElement).value='Client study';
- document.querySelector('dialog form')!.dispatchEvent(new Event('submit',{bubbles:true,cancelable:true}));
- await vi.waitFor(()=>expect(document.querySelector('h1')?.textContent).toContain('Client study'));
- click('[data-action="save"]');click('[data-kind="idea"]');(document.querySelector('[name=title]') as HTMLInputElement).value='Warm texture';(document.querySelector('[name=note]') as HTMLTextAreaElement).value='A pale plaster study';
- document.querySelector('#save-form')!.dispatchEvent(new Event('submit',{bubbles:true,cancelable:true}));
- await vi.waitFor(()=>expect(document.querySelector('[data-pin]')?.textContent).toContain('Warm texture'));
- click('[data-pin]');(document.querySelector('[name=note]') as HTMLTextAreaElement).value='A revised direction';
- document.querySelector('#edit-form')!.dispatchEvent(new Event('submit',{bubbles:true,cancelable:true}));
- await vi.waitFor(async()=>expect((await snapshot()).pins[0].note).toBe('A revised direction'));
- click('[data-action="share"]');click('#client-preview');await vi.waitFor(()=>expect(document.querySelector('.preview-banner')?.textContent).toContain('on this device only'));
- (document.querySelector('#feedback-text') as HTMLTextAreaElement).value='Try a little more blue.';
- document.querySelector('#feedback-form')!.dispatchEvent(new Event('submit',{bubbles:true,cancelable:true}));
- await vi.waitFor(()=>expect(document.querySelector('.feedback article')?.textContent).toContain('more blue'));
- click('[data-action="exit-preview"]');click('[data-action="select"]');click('[data-action="select-all"]');click('[data-action="transfer"]');
- (document.querySelector('[name=new_board_name]') as HTMLInputElement).value='Client copies';
- document.querySelector('dialog form')!.dispatchEvent(new Event('submit',{bubbles:true,cancelable:true}));
- await vi.waitFor(()=>expect(document.querySelector('h1')?.textContent).toContain('Client copies'));
- expect((await snapshot()).pins).toHaveLength(2);
- click('[data-action="share"]');expect(document.querySelector('#modal')?.textContent).toContain('Client links need sync');expect(document.querySelector('#modal [name=mode]')).toBeNull();
- (document.querySelector('#modal') as HTMLDialogElement).close();
- expect((await snapshot()).boards.find(b=>b.name==='Client copies')?.visibility).toBe('private');
- click('[data-pin]');click('#star-pin');await vi.waitFor(()=>expect(document.querySelector('#star-pin')?.getAttribute('aria-pressed')).toBe('true'));
- (document.querySelector('#pin-comment textarea') as HTMLTextAreaElement).value='A client favorite';document.querySelector('#pin-comment')!.dispatchEvent(new Event('submit',{bubbles:true,cancelable:true}));
- await vi.waitFor(()=>expect(document.querySelector('.pin-feedback article')?.textContent).toContain('client favorite'));
- click('#modal .close');click('[data-nav="all"]');
- click('[data-pin]');
- expect(document.querySelector('#prev-pin')?.hasAttribute('disabled')).toBe(true);
- click('#next-pin');expect(document.querySelector('.focus-toolbar')?.textContent).toContain('2 / 2');
- click('#prev-pin');expect(document.querySelector('.focus-toolbar')?.textContent).toContain('1 / 2');
- expect(document.querySelector('.inspector')!.innerHTML.indexOf('pin-feedback')).toBeLessThan(document.querySelector('.inspector')!.innerHTML.indexOf('edit-form'));
- click('#back-board');
+vi.stubGlobal(
+  'fetch',
+  vi.fn(async () => new Response('{}', {status: 503})),
+);
+it('creates a board, saves and edits an idea, searches, and previews feedback', async () => {
+  document.body.innerHTML = '<div id="app"></div>';
+  HTMLDialogElement.prototype.showModal = function () {
+    this.open = true;
+  };
+  HTMLDialogElement.prototype.close = function () {
+    this.open = false;
+  };
+  await import('./main');
+  await vi.waitFor(() => expect(document.querySelector('h1')?.textContent).toContain('All inspiration'));
+  const click = (selector: string) => {
+    const el = document.querySelector<HTMLElement>(selector);
+    expect(el).toBeTruthy();
+    el!.click();
+  };
+  click('[data-action="theme"]');
+  expect(document.documentElement.dataset.theme).toBe('light');
+  click('[data-action="new-board"]');
+  (document.querySelector('[name=name]') as HTMLInputElement).value = 'Client study';
+  document.querySelector('dialog form')!.dispatchEvent(new Event('submit', {bubbles: true, cancelable: true}));
+  await vi.waitFor(() => expect(document.querySelector('h1')?.textContent).toContain('Client study'));
+  click('[data-action="save"]');
+  click('[data-kind="idea"]');
+  (document.querySelector('[name=title]') as HTMLInputElement).value = 'Warm texture';
+  (document.querySelector('[name=note]') as HTMLTextAreaElement).value = 'A pale plaster study';
+  document.querySelector('#save-form')!.dispatchEvent(new Event('submit', {bubbles: true, cancelable: true}));
+  await vi.waitFor(() => expect(document.querySelector('[data-pin]')?.textContent).toContain('Warm texture'));
+  click('[data-pin]');
+  (document.querySelector('[name=note]') as HTMLTextAreaElement).value = 'A revised direction';
+  document.querySelector('#edit-form')!.dispatchEvent(new Event('submit', {bubbles: true, cancelable: true}));
+  await vi.waitFor(async () => expect((await snapshot()).pins[0].note).toBe('A revised direction'));
+  click('[data-action="share"]');
+  click('#client-preview');
+  await vi.waitFor(() =>
+    expect(document.querySelector('.preview-banner')?.textContent).toContain('on this device only'),
+  );
+  (document.querySelector('#feedback-text') as HTMLTextAreaElement).value = 'Try a little more blue.';
+  document.querySelector('#feedback-form')!.dispatchEvent(new Event('submit', {bubbles: true, cancelable: true}));
+  await vi.waitFor(() => expect(document.querySelector('.feedback article')?.textContent).toContain('more blue'));
+  click('[data-action="exit-preview"]');
+  click('[data-action="select"]');
+  click('[data-action="select-all"]');
+  click('[data-action="transfer"]');
+  (document.querySelector('[name=new_board_name]') as HTMLInputElement).value = 'Client copies';
+  document.querySelector('dialog form')!.dispatchEvent(new Event('submit', {bubbles: true, cancelable: true}));
+  await vi.waitFor(() => expect(document.querySelector('h1')?.textContent).toContain('Client copies'));
+  expect((await snapshot()).pins).toHaveLength(2);
+  click('[data-action="share"]');
+  expect(document.querySelector('#modal')?.textContent).toContain('Client links need sync');
+  expect(document.querySelector('#modal [name=mode]')).toBeNull();
+  (document.querySelector('#modal') as HTMLDialogElement).close();
+  expect((await snapshot()).boards.find(b => b.name === 'Client copies')?.visibility).toBe('private');
+  click('[data-pin]');
+  click('#star-pin');
+  await vi.waitFor(() => expect(document.querySelector('#star-pin')?.getAttribute('aria-pressed')).toBe('true'));
+  (document.querySelector('#pin-comment textarea') as HTMLTextAreaElement).value = 'A client favorite';
+  document.querySelector('#pin-comment')!.dispatchEvent(new Event('submit', {bubbles: true, cancelable: true}));
+  await vi.waitFor(() =>
+    expect(document.querySelector('.pin-feedback article')?.textContent).toContain('client favorite'),
+  );
+  click('#modal .close');
+  click('[data-nav="all"]');
+  click('[data-pin]');
+  expect(document.querySelector('#prev-pin')?.hasAttribute('disabled')).toBe(true);
+  click('#next-pin');
+  expect(document.querySelector('.focus-toolbar')?.textContent).toContain('2 / 2');
+  click('#prev-pin');
+  expect(document.querySelector('.focus-toolbar')?.textContent).toContain('1 / 2');
+  expect(document.querySelector('.inspector')!.innerHTML.indexOf('pin-feedback')).toBeLessThan(
+    document.querySelector('.inspector')!.innerHTML.indexOf('edit-form'),
+  );
+  click('#back-board');
 
- expect(document.querySelectorAll('[data-select-pin]')).toHaveLength(0);
- const cards=Array.from(document.querySelectorAll<HTMLElement>('[data-pin]'));
- cards[0].dispatchEvent(new MouseEvent('click',{bubbles:true,ctrlKey:true}));
- document.querySelectorAll<HTMLElement>('[data-pin]')[1].dispatchEvent(new MouseEvent('click',{bubbles:true,shiftKey:true}));
- expect(document.querySelectorAll('.is-selected')).toHaveLength(2);
- click('[data-action="present"]');expect(document.querySelectorAll('.presentation figure')).toHaveLength(2);document.querySelector<HTMLDialogElement>('.presentation')!.close();
- click('[data-filter="starred"]');expect(document.querySelectorAll('[data-pin]')).toHaveLength(1);
- const original=(await snapshot()).boards.find(b=>b.name==='Client study')!;click(`[data-nav="${original.id}"]`);expect(document.querySelectorAll('[data-pin]')).toHaveLength(1);expect(document.querySelector('[data-filter="all"]')?.classList.contains('chosen')).toBe(true);
- click('[data-action="share"]');
- (document.querySelector('[name=comments_enabled]') as HTMLInputElement).checked=false;
- click('#client-preview');await vi.waitFor(()=>expect(document.querySelector('.preview-banner')).toBeTruthy());
- expect(document.querySelector('#feedback-form')?.hasAttribute('hidden')).toBe(true);
- click('[data-pin]');expect(document.querySelector('#pin-comment')?.hasAttribute('hidden')).toBe(true);
- expect(document.querySelector('#quick-save-pin')).toBeNull();
- click('#back-board');click('[data-action="exit-preview"]');
- const search=document.querySelector<HTMLInputElement>('#search')!;search.value='nonexistent';search.dispatchEvent(new Event('input'));expect(document.querySelectorAll('[data-pin]')).toHaveLength(0);
+  expect(document.querySelectorAll('[data-select-pin]')).toHaveLength(0);
+  const cards = Array.from(document.querySelectorAll<HTMLElement>('[data-pin]'));
+  cards[0].dispatchEvent(new MouseEvent('click', {bubbles: true, ctrlKey: true}));
+  document
+    .querySelectorAll<HTMLElement>('[data-pin]')[1]
+    .dispatchEvent(new MouseEvent('click', {bubbles: true, shiftKey: true}));
+  expect(document.querySelectorAll('.is-selected')).toHaveLength(2);
+  click('[data-action="present"]');
+  expect(document.querySelectorAll('.presentation figure')).toHaveLength(2);
+  document.querySelector<HTMLDialogElement>('.presentation')!.close();
+  click('[data-filter="starred"]');
+  expect(document.querySelectorAll('[data-pin]')).toHaveLength(1);
+  const original = (await snapshot()).boards.find(b => b.name === 'Client study')!;
+  click(`[data-nav="${original.id}"]`);
+  expect(document.querySelectorAll('[data-pin]')).toHaveLength(1);
+  expect(document.querySelector('[data-filter="all"]')?.classList.contains('chosen')).toBe(true);
+  click('[data-action="share"]');
+  (document.querySelector('[name=comments_enabled]') as HTMLInputElement).checked = false;
+  click('#client-preview');
+  await vi.waitFor(() => expect(document.querySelector('.preview-banner')).toBeTruthy());
+  expect(document.querySelector('#feedback-form')?.hasAttribute('hidden')).toBe(true);
+  click('[data-pin]');
+  expect(document.querySelector('#pin-comment')?.hasAttribute('hidden')).toBe(true);
+  expect(document.querySelector('#quick-save-pin')).toBeNull();
+  click('#back-board');
+  click('[data-action="exit-preview"]');
+  const search = document.querySelector<HTMLInputElement>('#search')!;
+  search.value = 'nonexistent';
+  search.dispatchEvent(new Event('input'));
+  expect(document.querySelectorAll('[data-pin]')).toHaveLength(0);
 });

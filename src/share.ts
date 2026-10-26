@@ -2,74 +2,270 @@
 import './style.css';
 import {openGallery} from './viewer';
 import type {Pin} from './data';
-import {IMAGE_ACCEPT,optimizeImage,palette} from './media';
-type SharedPin={id:string;file_ref:string|null;meta:{kind:'image'|'idea'|'link';title:string};source_credit:string;is_own:boolean;source_url:string;note:string;palette:string[];contributor?:string;mine?:boolean};
-type Comment={id:string;pin_id:string|null;text:string;author:string;created_at:string};
-type Shared={board:{name:string;description:string};permission:'view'|'comment'|'contribute';expires_at:string|null;pins:SharedPin[];comments:Comment[];starred:string[]};
-const root=document.querySelector<HTMLElement>('#share')!;
-const MAX_IMAGES=10;
-const token=location.pathname.split('/')[2]||'';
-const esc=(s:unknown)=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]!));
-const store={get:(k:string)=>{try{return localStorage.getItem(k);}catch{return null;}},set:(k:string,v:string)=>{try{localStorage.setItem(k,v);}catch{}}};
+import {IMAGE_ACCEPT, optimizeImage, palette} from './media';
+type SharedPin = {
+  id: string;
+  file_ref: string | null;
+  meta: {kind: 'image' | 'idea' | 'link'; title: string};
+  source_credit: string;
+  is_own: boolean;
+  source_url: string;
+  note: string;
+  palette: string[];
+  contributor?: string;
+  mine?: boolean;
+};
+type Comment = {id: string; pin_id: string | null; text: string; author: string; created_at: string};
+type Shared = {
+  board: {name: string; description: string};
+  permission: 'view' | 'comment' | 'contribute';
+  expires_at: string | null;
+  pins: SharedPin[];
+  comments: Comment[];
+  starred: string[];
+};
+const root = document.querySelector<HTMLElement>('#share')!;
+const MAX_IMAGES = 10;
+const token = location.pathname.split('/')[2] || '';
+const esc = (s: unknown) =>
+  String(s ?? '').replace(/[&<>"']/g, c => ({'&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'})[c]!);
+const store = {
+  get: (k: string) => {
+    try {
+      return localStorage.getItem(k);
+    } catch {
+      return null;
+    }
+  },
+  set: (k: string, v: string) => {
+    try {
+      localStorage.setItem(k, v);
+    } catch {}
+  },
+};
 // An anonymous per-browser id lets a client toggle their own stars; it is not an account and grants nothing by itself.
-const guest=store.get('studio-wall-guest')||(()=>{const g=crypto.randomUUID().replace(/-/g,'');store.set('studio-wall-guest',g);return g;})();
-document.documentElement.dataset.theme=store.get('studio-wall-theme')||'dark';
-const api=async(path:string,init:RequestInit={})=>{const r=await fetch(`/api/s/${token}${path}`,{...init,headers:{'x-guest-id':guest,...(typeof init.body==='string'?{'content-type':'application/json'}:{}),...init.headers}});const body=await r.json().catch(()=>({}));if(!r.ok)throw Object.assign(Error(body.error||'Something went wrong. Please try again.'),{password:body.password===true});return body;};
-const src=(p:SharedPin)=>p.file_ref?`/api/s/${token}/files/${p.file_ref}`:null;
-let data:Shared,about:string|null=null;
+const guest =
+  store.get('studio-wall-guest') ||
+  (() => {
+    const g = crypto.randomUUID().replace(/-/g, '');
+    store.set('studio-wall-guest', g);
+    return g;
+  })();
+document.documentElement.dataset.theme = store.get('studio-wall-theme') || 'dark';
+const api = async (path: string, init: RequestInit = {}) => {
+  const r = await fetch(`/api/s/${token}${path}`, {
+    ...init,
+    headers: {
+      'x-guest-id': guest,
+      ...(typeof init.body === 'string' ? {'content-type': 'application/json'} : {}),
+      ...init.headers,
+    },
+  });
+  const body = await r.json().catch(() => ({}));
+  if (!r.ok)
+    throw Object.assign(Error(body.error || 'Something went wrong. Please try again.'), {
+      password: body.password === true,
+    });
+  return body;
+};
+const src = (p: SharedPin) => (p.file_ref ? `/api/s/${token}/files/${p.file_ref}` : null);
+let data: Shared,
+  about: string | null = null;
 
-function card(p:SharedPin){const img=src(p),stars=data.starred.includes(p.id),count=data.comments.filter(c=>c.pin_id===p.id).length,can=data.permission!=='view';
- return `<div class="pin-wrap"><button class="pin ${img?'':'text-pin'}" data-open="${p.id}">${img?`<img src="${img}" alt="${esc(p.meta.title||'Reference')}" loading="lazy" draggable="false">`:`<div class="idea-content"><p>${esc(p.note||p.meta.title||p.source_url)}</p></div>`}<div class="caption"><strong>${stars?'★ ':''}${esc(p.meta.title||(p.meta.kind==='idea'?'A thought':'Untitled reference'))}</strong><span>${esc(p.contributor?`Added by ${p.contributor}`:p.is_own?'Artist’s own work':p.source_credit||'')}${count?` · ${count} comment${count===1?'':'s'}`:''}</span></div></button>
- ${p.source_url?`<a class="share-source" href="${esc(p.source_url)}" target="_blank" rel="noopener noreferrer">Open link ↗</a>`:''}${can?`<div class="share-actions"><button data-star="${p.id}" aria-pressed="${stars}" aria-label="${stars?'Remove star':'Star this'}">${stars?'★ Starred':'☆ Star'}</button><button data-about="${p.id}">Comment</button>${p.mine&&data.permission==='contribute'?`<button class="danger" data-remove="${p.id}" aria-label="Remove this card you added">Remove</button>`:''}</div>`:''}</div>`;}
-
-function render(){
- const can=data.permission!=='view',adds=data.permission==='contribute',name=store.get('studio-wall-guest-name')||'',aboutPin=data.pins.find(p=>p.id===about);
- document.title=`${data.board.name} · Studio Wall`;
- root.innerHTML=`<header class="share-head"><div class="eyebrow">A BOARD SHARED WITH YOU</div><h1>${esc(data.board.name)}</h1>${data.board.description?`<p class="intro">${esc(data.board.description)}</p>`:''}<p class="share-meta">${data.pins.length} reference${data.pins.length===1?'':'s'} · ${adds?'Star favourites, comment, and add your own images or ideas':can?'Tap ☆ to star favourites and leave comments for the artist':'View only'}${data.expires_at?` · link open until ${new Date(data.expires_at).toLocaleDateString(undefined,{month:'short',day:'numeric'})}`:''}</p><button class="secondary" id="theme-toggle" aria-label="Toggle light or dark">${document.documentElement.dataset.theme==='dark'?'Light':'Dark'} mode</button></header>
- ${adds?`<details class="share-add"${data.pins.length?'':' open'}><summary>+ Add to this board</summary><form id="add-form"><label>Your name<input name="name" maxlength="60" value="${esc(name)}" placeholder="So the artist knows who added it"></label><label>Images<input name="image" type="file" multiple accept="${IMAGE_ACCEPT}"><small class="hint">Up to ${MAX_IMAGES} at a time.</small></label><label>Title<input name="title" maxlength="200" placeholder="Optional"></label><label>Or a link<input name="url" type="url" inputmode="url" maxlength="2000" placeholder="https://…"></label><label>Note<textarea name="note" rows="2" maxlength="4000" placeholder="An idea, or why you chose this"></textarea></label><p class="error" role="alert"></p><button class="primary">Add to board</button></form></details>`:''}
- <section class="masonry">${data.pins.map(card).join('')||'<p class="hint">This board is empty for now.</p>'}</section>
- <section class="feedback share-feedback"><div class="eyebrow">CONVERSATION</div>${data.comments.map(c=>`<article><strong>${esc(c.author)}${c.pin_id?` <small>on ${esc(data.pins.find(p=>p.id===c.pin_id)?.meta.title||'an image')}</small>`:''}</strong><p>${esc(c.text)}</p></article>`).join('')||'<p class="hint">No comments yet.</p>'}
- ${can?`<form id="comment-form">${aboutPin?`<p class="share-about">Commenting on <strong>${esc(aboutPin.meta.title||'this image')}</strong> <button type="button" id="clear-about">Comment on the whole board instead</button></p>`:''}<label>Your name<input name="name" maxlength="60" value="${esc(name)}" placeholder="So the artist knows who wrote"></label><label>Comment<textarea name="text" rows="3" maxlength="2000" required placeholder="What do you love, or what would you change?"></textarea></label><p class="error" role="alert"></p><button class="primary">Send to artist</button></form>`:''}</section>`;
- bind();
+function card(p: SharedPin) {
+  const img = src(p),
+    stars = data.starred.includes(p.id),
+    count = data.comments.filter(c => c.pin_id === p.id).length,
+    can = data.permission !== 'view';
+  return `<div class="pin-wrap"><button class="pin ${img ? '' : 'text-pin'}" data-open="${p.id}">${img ? `<img src="${img}" alt="${esc(p.meta.title || 'Reference')}" loading="lazy" draggable="false">` : `<div class="idea-content"><p>${esc(p.note || p.meta.title || p.source_url)}</p></div>`}<div class="caption"><strong>${stars ? '★ ' : ''}${esc(p.meta.title || (p.meta.kind === 'idea' ? 'A thought' : 'Untitled reference'))}</strong><span>${esc(p.contributor ? `Added by ${p.contributor}` : p.is_own ? 'Artist’s own work' : p.source_credit || '')}${count ? ` · ${count} comment${count === 1 ? '' : 's'}` : ''}</span></div></button>
+ ${p.source_url ? `<a class="share-source" href="${esc(p.source_url)}" target="_blank" rel="noopener noreferrer">Open link ↗</a>` : ''}${can ? `<div class="share-actions"><button data-star="${p.id}" aria-pressed="${stars}" aria-label="${stars ? 'Remove star' : 'Star this'}">${stars ? '★ Starred' : '☆ Star'}</button><button data-about="${p.id}">Comment</button>${p.mine && data.permission === 'contribute' ? `<button class="danger" data-remove="${p.id}" aria-label="Remove this card you added">Remove</button>` : ''}</div>` : ''}</div>`;
 }
-function bind(){
- root.querySelectorAll<HTMLButtonElement>('[data-open]').forEach(b=>b.onclick=()=>{const p=data.pins.find(x=>x.id===b.dataset.open)!;if(src(p))openGallery(data.pins as unknown as Pin[],x=>src(x as unknown as SharedPin),p.id);});
- root.querySelector<HTMLButtonElement>('#theme-toggle')!.onclick=()=>{const t=document.documentElement.dataset.theme==='dark'?'light':'dark';document.documentElement.dataset.theme=t;store.set('studio-wall-theme',t);render();};
- root.querySelectorAll<HTMLButtonElement>('[data-star]').forEach(b=>b.onclick=async()=>{const id=b.dataset.star!,on=!data.starred.includes(id);b.disabled=true;
-  try{await api('/feedback',{method:'POST',body:JSON.stringify({pin_id:id,starred:on,name:store.get('studio-wall-guest-name')||''})});data.starred=on?[...data.starred,id]:data.starred.filter(x=>x!==id);render();}catch(e){alert((e as Error).message);b.disabled=false;}});
- root.querySelectorAll<HTMLButtonElement>('[data-remove]').forEach(b=>b.onclick=async()=>{const id=b.dataset.remove!;if(!confirm('Remove this card you added? The artist can still bring it back.'))return;b.disabled=true;
-  try{await api('/pins/'+id,{method:'DELETE'});data.pins=data.pins.filter(p=>p.id!==id);if(about===id)about=null;render();}catch(e){alert((e as Error).message);b.disabled=false;}});
- root.querySelectorAll<HTMLButtonElement>('[data-about]').forEach(b=>b.onclick=()=>{about=b.dataset.about!;render();root.querySelector<HTMLTextAreaElement>('[name=text]')?.focus();});
- root.querySelector('#clear-about')?.addEventListener('click',()=>{about=null;render();});
- const form=root.querySelector<HTMLFormElement>('#comment-form');
- if(form)form.onsubmit=async e=>{e.preventDefault();const v=Object.fromEntries(new FormData(form)) as Record<string,string>;const btn=form.querySelector('button.primary') as HTMLButtonElement;btn.disabled=true;store.set('studio-wall-guest-name',v.name.trim());
-  try{const {comment}=await api('/feedback',{method:'POST',body:JSON.stringify({pin_id:about,text:v.text,name:v.name})});data.comments.push(comment);about=null;render();}
-  catch(err){form.querySelector('.error')!.textContent=(err as Error).message;btn.disabled=false;}};
- const add=root.querySelector<HTMLFormElement>('#add-form');
- if(add)add.onsubmit=async e=>{e.preventDefault();const f=new FormData(add),btn=add.querySelector<HTMLButtonElement>('button.primary')!,err=add.querySelector('.error')!;const files=(f.getAll('image') as File[]).filter(x=>x.size),v=(k:string)=>String(f.get(k)||'').trim();
-  if(!files.length&&!v('url')&&!v('note')){err.textContent='Choose an image, or add a link or a note.';return;}
-  if(files.length>MAX_IMAGES){err.textContent=`Choose up to ${MAX_IMAGES} images at a time.`;return;}
-  btn.disabled=true;err.textContent='';store.set('studio-wall-guest-name',v('name'));
-  try{const q=new URLSearchParams({name:v('name')});let added:SharedPin[];
-   if(files.length){
-    // Every photo is prepared first and all go in one request, so either all are added or none are.
-    const body=new FormData();body.set('title',v('title'));
-    for(const [i,x] of files.entries()){btn.textContent=files.length>1?`Preparing ${i+1} of ${files.length}…`:'Preparing image…';
-     let img:Blob;try{img=await optimizeImage(x);}catch(e){throw Error(`${x.name||'An image'}: ${(e as Error).message}`);}
-     body.append('image',img,'image');body.append('palette',(await palette(img).catch(()=>[])).join(','));}
-    btn.textContent='Adding…';added=(await api('/pins?'+q,{method:'POST',body})).pins;}
-   else{btn.textContent='Adding…';added=[(await api('/pins?'+q,{method:'POST',body:JSON.stringify({title:v('title'),url:v('url'),note:v('note')}),headers:{'content-type':'application/json'}})).pin];}
-   data.pins.unshift(...[...added].reverse());render();
-   root.querySelector('.share-add')?.removeAttribute('open');root.querySelector<HTMLElement>(`[data-open="${added[added.length-1].id}"]`)?.scrollIntoView?.({block:'center'});}
-  catch(x){err.textContent=(x as Error).message;btn.disabled=false;btn.textContent='Add to board';}};
+
+function render() {
+  const can = data.permission !== 'view',
+    adds = data.permission === 'contribute',
+    name = store.get('studio-wall-guest-name') || '',
+    aboutPin = data.pins.find(p => p.id === about);
+  document.title = `${data.board.name} · Studio Wall`;
+  root.innerHTML = `<header class="share-head"><div class="eyebrow">A BOARD SHARED WITH YOU</div><h1>${esc(data.board.name)}</h1>${data.board.description ? `<p class="intro">${esc(data.board.description)}</p>` : ''}<p class="share-meta">${data.pins.length} reference${data.pins.length === 1 ? '' : 's'} · ${adds ? 'Star favourites, comment, and add your own images or ideas' : can ? 'Tap ☆ to star favourites and leave comments for the artist' : 'View only'}${data.expires_at ? ` · link open until ${new Date(data.expires_at).toLocaleDateString(undefined, {month: 'short', day: 'numeric'})}` : ''}</p><button class="secondary" id="theme-toggle" aria-label="Toggle light or dark">${document.documentElement.dataset.theme === 'dark' ? 'Light' : 'Dark'} mode</button></header>
+ ${adds ? `<details class="share-add"${data.pins.length ? '' : ' open'}><summary>+ Add to this board</summary><form id="add-form"><label>Your name<input name="name" maxlength="60" value="${esc(name)}" placeholder="So the artist knows who added it"></label><label>Images<input name="image" type="file" multiple accept="${IMAGE_ACCEPT}"><small class="hint">Up to ${MAX_IMAGES} at a time.</small></label><label>Title<input name="title" maxlength="200" placeholder="Optional"></label><label>Or a link<input name="url" type="url" inputmode="url" maxlength="2000" placeholder="https://…"></label><label>Note<textarea name="note" rows="2" maxlength="4000" placeholder="An idea, or why you chose this"></textarea></label><p class="error" role="alert"></p><button class="primary">Add to board</button></form></details>` : ''}
+ <section class="masonry">${data.pins.map(card).join('') || '<p class="hint">This board is empty for now.</p>'}</section>
+ <section class="feedback share-feedback"><div class="eyebrow">CONVERSATION</div>${data.comments.map(c => `<article><strong>${esc(c.author)}${c.pin_id ? ` <small>on ${esc(data.pins.find(p => p.id === c.pin_id)?.meta.title || 'an image')}</small>` : ''}</strong><p>${esc(c.text)}</p></article>`).join('') || '<p class="hint">No comments yet.</p>'}
+ ${can ? `<form id="comment-form">${aboutPin ? `<p class="share-about">Commenting on <strong>${esc(aboutPin.meta.title || 'this image')}</strong> <button type="button" id="clear-about">Comment on the whole board instead</button></p>` : ''}<label>Your name<input name="name" maxlength="60" value="${esc(name)}" placeholder="So the artist knows who wrote"></label><label>Comment<textarea name="text" rows="3" maxlength="2000" required placeholder="What do you love, or what would you change?"></textarea></label><p class="error" role="alert"></p><button class="primary">Send to artist</button></form>` : ''}</section>`;
+  bind();
+}
+function bind() {
+  root.querySelectorAll<HTMLButtonElement>('[data-open]').forEach(
+    b =>
+      (b.onclick = () => {
+        const p = data.pins.find(x => x.id === b.dataset.open)!;
+        if (src(p)) openGallery(data.pins as unknown as Pin[], x => src(x as unknown as SharedPin), p.id);
+      }),
+  );
+  root.querySelector<HTMLButtonElement>('#theme-toggle')!.onclick = () => {
+    const t = document.documentElement.dataset.theme === 'dark' ? 'light' : 'dark';
+    document.documentElement.dataset.theme = t;
+    store.set('studio-wall-theme', t);
+    render();
+  };
+  root.querySelectorAll<HTMLButtonElement>('[data-star]').forEach(
+    b =>
+      (b.onclick = async () => {
+        const id = b.dataset.star!,
+          on = !data.starred.includes(id);
+        b.disabled = true;
+        try {
+          await api('/feedback', {
+            method: 'POST',
+            body: JSON.stringify({pin_id: id, starred: on, name: store.get('studio-wall-guest-name') || ''}),
+          });
+          data.starred = on ? [...data.starred, id] : data.starred.filter(x => x !== id);
+          render();
+        } catch (e) {
+          alert((e as Error).message);
+          b.disabled = false;
+        }
+      }),
+  );
+  root.querySelectorAll<HTMLButtonElement>('[data-remove]').forEach(
+    b =>
+      (b.onclick = async () => {
+        const id = b.dataset.remove!;
+        if (!confirm('Remove this card you added? The artist can still bring it back.')) return;
+        b.disabled = true;
+        try {
+          await api('/pins/' + id, {method: 'DELETE'});
+          data.pins = data.pins.filter(p => p.id !== id);
+          if (about === id) about = null;
+          render();
+        } catch (e) {
+          alert((e as Error).message);
+          b.disabled = false;
+        }
+      }),
+  );
+  root.querySelectorAll<HTMLButtonElement>('[data-about]').forEach(
+    b =>
+      (b.onclick = () => {
+        about = b.dataset.about!;
+        render();
+        root.querySelector<HTMLTextAreaElement>('[name=text]')?.focus();
+      }),
+  );
+  root.querySelector('#clear-about')?.addEventListener('click', () => {
+    about = null;
+    render();
+  });
+  const form = root.querySelector<HTMLFormElement>('#comment-form');
+  if (form)
+    form.onsubmit = async e => {
+      e.preventDefault();
+      const v = Object.fromEntries(new FormData(form)) as Record<string, string>;
+      const btn = form.querySelector('button.primary') as HTMLButtonElement;
+      btn.disabled = true;
+      store.set('studio-wall-guest-name', v.name.trim());
+      try {
+        const {comment} = await api('/feedback', {
+          method: 'POST',
+          body: JSON.stringify({pin_id: about, text: v.text, name: v.name}),
+        });
+        data.comments.push(comment);
+        about = null;
+        render();
+      } catch (err) {
+        form.querySelector('.error')!.textContent = (err as Error).message;
+        btn.disabled = false;
+      }
+    };
+  const add = root.querySelector<HTMLFormElement>('#add-form');
+  if (add)
+    add.onsubmit = async e => {
+      e.preventDefault();
+      const f = new FormData(add),
+        btn = add.querySelector<HTMLButtonElement>('button.primary')!,
+        err = add.querySelector('.error')!;
+      const files = (f.getAll('image') as File[]).filter(x => x.size),
+        v = (k: string) => String(f.get(k) || '').trim();
+      if (!files.length && !v('url') && !v('note')) {
+        err.textContent = 'Choose an image, or add a link or a note.';
+        return;
+      }
+      if (files.length > MAX_IMAGES) {
+        err.textContent = `Choose up to ${MAX_IMAGES} images at a time.`;
+        return;
+      }
+      btn.disabled = true;
+      err.textContent = '';
+      store.set('studio-wall-guest-name', v('name'));
+      try {
+        const q = new URLSearchParams({name: v('name')});
+        let added: SharedPin[];
+        if (files.length) {
+          // Every photo is prepared first and all go in one request, so either all are added or none are.
+          const body = new FormData();
+          body.set('title', v('title'));
+          for (const [i, x] of files.entries()) {
+            btn.textContent = files.length > 1 ? `Preparing ${i + 1} of ${files.length}…` : 'Preparing image…';
+            let img: Blob;
+            try {
+              img = await optimizeImage(x);
+            } catch (e) {
+              throw Error(`${x.name || 'An image'}: ${(e as Error).message}`);
+            }
+            body.append('image', img, 'image');
+            body.append('palette', (await palette(img).catch(() => [])).join(','));
+          }
+          btn.textContent = 'Adding…';
+          added = (await api('/pins?' + q, {method: 'POST', body})).pins;
+        } else {
+          btn.textContent = 'Adding…';
+          added = [
+            (
+              await api('/pins?' + q, {
+                method: 'POST',
+                body: JSON.stringify({title: v('title'), url: v('url'), note: v('note')}),
+                headers: {'content-type': 'application/json'},
+              })
+            ).pin,
+          ];
+        }
+        data.pins.unshift(...[...added].reverse());
+        render();
+        root.querySelector('.share-add')?.removeAttribute('open');
+        root
+          .querySelector<HTMLElement>(`[data-open="${added[added.length - 1].id}"]`)
+          ?.scrollIntoView?.({block: 'center'});
+      } catch (x) {
+        err.textContent = (x as Error).message;
+        btn.disabled = false;
+        btn.textContent = 'Add to board';
+      }
+    };
 }
 // A password link: the server answers 401 until /unlock sets its cookie, which the page and its images then send.
-function askPassword(){
- root.innerHTML=`<header class="share-head"><div class="eyebrow">A BOARD SHARED WITH YOU</div><h1>This board has a password</h1><p class="intro">Enter the password the artist gave you.</p><form id="unlock-form" class="share-unlock"><label>Password<input name="password" type="password" autocomplete="current-password" required maxlength="200" autofocus></label><p class="error" role="alert"></p><button class="primary">Open board</button></form></header>`;
- const form=root.querySelector<HTMLFormElement>('#unlock-form')!;
- form.onsubmit=async e=>{e.preventDefault();const btn=form.querySelector('button')!;btn.disabled=true;
-  try{await api('/unlock',{method:'POST',body:JSON.stringify({password:new FormData(form).get('password')})});await load();}
-  catch(err){form.querySelector('.error')!.textContent=(err as Error).message;btn.disabled=false;}};
+function askPassword() {
+  root.innerHTML = `<header class="share-head"><div class="eyebrow">A BOARD SHARED WITH YOU</div><h1>This board has a password</h1><p class="intro">Enter the password the artist gave you.</p><form id="unlock-form" class="share-unlock"><label>Password<input name="password" type="password" autocomplete="current-password" required maxlength="200" autofocus></label><p class="error" role="alert"></p><button class="primary">Open board</button></form></header>`;
+  const form = root.querySelector<HTMLFormElement>('#unlock-form')!;
+  form.onsubmit = async e => {
+    e.preventDefault();
+    const btn = form.querySelector('button')!;
+    btn.disabled = true;
+    try {
+      await api('/unlock', {method: 'POST', body: JSON.stringify({password: new FormData(form).get('password')})});
+      await load();
+    } catch (err) {
+      form.querySelector('.error')!.textContent = (err as Error).message;
+      btn.disabled = false;
+    }
+  };
 }
-async function load(){try{data=await api('');render();}catch(e){if((e as {password?:boolean}).password)return askPassword();root.innerHTML=`<header class="share-head"><div class="eyebrow">STUDIO WALL</div><h1>This link isn’t available</h1><p class="intro">${esc((e as Error).message)} Ask the artist for a new link.</p></header>`;}}
+async function load() {
+  try {
+    data = await api('');
+    render();
+  } catch (e) {
+    if ((e as {password?: boolean}).password) return askPassword();
+    root.innerHTML = `<header class="share-head"><div class="eyebrow">STUDIO WALL</div><h1>This link isn’t available</h1><p class="intro">${esc((e as Error).message)} Ask the artist for a new link.</p></header>`;
+  }
+}
 load();

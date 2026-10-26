@@ -1,86 +1,221 @@
 import 'fake-indexeddb/auto';
-import {describe,it,expect,beforeEach} from 'vitest';
-import {action,database,snapshot,undo,redo,historyStatus,resetHistory} from './data';
-beforeEach(async()=>{resetHistory();const db=await database;for(const s of ['boards','pins','files','feedback','activity_log','outbox'])await db.clear(s);});
-describe('local action boundary',()=>{
- it('atomically persists image, pin and outbox event',async()=>{const b=await action({type:'board.create',payload:{name:'Materials'}});const p=await action({type:'pin.save',payload:{board_id:b.id,note:'Blue',palette:['#aabbcc']},blob:new Blob(['sample'],{type:'image/png'})});const db=await database;expect(p.id).toMatch(/^[0-9A-HJKMNP-TV-Z]{26}$/);expect((await db.get('files',p.file_ref)).size).toBe(6);expect(await db.count('activity_log')).toBe(2);expect(await db.count('outbox')).toBe(2);expect((await snapshot()).pins[0].studio_id).toBe('local-studio');});
- it('rejects missing board without partial writes',async()=>{await expect(action({type:'pin.save',payload:{board_id:'missing',note:'x'}})).rejects.toThrow();const db=await database;expect(await db.count('pins')).toBe(0);expect(await db.count('outbox')).toBe(0);});
- it('rejects unsafe links',async()=>{const b=await action({type:'board.create',payload:{name:'Test'}});await expect(action({type:'pin.save',payload:{board_id:b.id,source_url:'javascript:alert(1)'}})).rejects.toThrow();expect((await snapshot()).pins).toHaveLength(0);});
- it('moves and versions a pin, soft deletes a board and its pins',async()=>{const b=await action({type:'board.create',payload:{name:'One'}});const c=await action({type:'board.create',payload:{name:'Two'}});const p=await action({type:'pin.save',payload:{board_id:b.id,note:'keep'}});const moved=await action({type:'pin.move',id:p.id,payload:{board_id:c.id}});expect(moved.version).toBe(2);await action({type:'board.delete',id:c.id});expect((await snapshot()).pins).toHaveLength(0);expect((await(await database).get('pins',p.id)).deleted_at).toBeTruthy();});
- it('keeps sharing unavailable until an authorized backend exists',async()=>{await expect(action({type:'board.share'})).rejects.toThrow('backend');expect(await(await database).count('outbox')).toBe(0);});
- it('rejects a cover from a different board',async()=>{const b=await action({type:'board.create',payload:{name:'One'}});const c=await action({type:'board.create',payload:{name:'Two'}});const p=await action({type:'pin.save',payload:{board_id:c.id,note:'test'}});await expect(action({type:'board.update',id:b.id,payload:{cover_pin_id:p.id}})).rejects.toThrow();});
+import {describe, it, expect, beforeEach} from 'vitest';
+import {action, database, snapshot, undo, redo, historyStatus, resetHistory} from './data';
+beforeEach(async () => {
+  resetHistory();
+  const db = await database;
+  for (const s of ['boards', 'pins', 'files', 'feedback', 'activity_log', 'outbox']) await db.clear(s);
+});
+describe('local action boundary', () => {
+  it('atomically persists image, pin and outbox event', async () => {
+    const b = await action({type: 'board.create', payload: {name: 'Materials'}});
+    const p = await action({
+      type: 'pin.save',
+      payload: {board_id: b.id, note: 'Blue', palette: ['#aabbcc']},
+      blob: new Blob(['sample'], {type: 'image/png'}),
+    });
+    const db = await database;
+    expect(p.id).toMatch(/^[0-9A-HJKMNP-TV-Z]{26}$/);
+    expect((await db.get('files', p.file_ref)).size).toBe(6);
+    expect(await db.count('activity_log')).toBe(2);
+    expect(await db.count('outbox')).toBe(2);
+    expect((await snapshot()).pins[0].studio_id).toBe('local-studio');
+  });
+  it('rejects missing board without partial writes', async () => {
+    await expect(action({type: 'pin.save', payload: {board_id: 'missing', note: 'x'}})).rejects.toThrow();
+    const db = await database;
+    expect(await db.count('pins')).toBe(0);
+    expect(await db.count('outbox')).toBe(0);
+  });
+  it('rejects unsafe links', async () => {
+    const b = await action({type: 'board.create', payload: {name: 'Test'}});
+    await expect(
+      action({type: 'pin.save', payload: {board_id: b.id, source_url: 'javascript:alert(1)'}}),
+    ).rejects.toThrow();
+    expect((await snapshot()).pins).toHaveLength(0);
+  });
+  it('moves and versions a pin, soft deletes a board and its pins', async () => {
+    const b = await action({type: 'board.create', payload: {name: 'One'}});
+    const c = await action({type: 'board.create', payload: {name: 'Two'}});
+    const p = await action({type: 'pin.save', payload: {board_id: b.id, note: 'keep'}});
+    const moved = await action({type: 'pin.move', id: p.id, payload: {board_id: c.id}});
+    expect(moved.version).toBe(2);
+    await action({type: 'board.delete', id: c.id});
+    expect((await snapshot()).pins).toHaveLength(0);
+    expect((await (await database).get('pins', p.id)).deleted_at).toBeTruthy();
+  });
+  it('keeps sharing unavailable until an authorized backend exists', async () => {
+    await expect(action({type: 'board.share'})).rejects.toThrow('backend');
+    expect(await (await database).count('outbox')).toBe(0);
+  });
+  it('rejects a cover from a different board', async () => {
+    const b = await action({type: 'board.create', payload: {name: 'One'}});
+    const c = await action({type: 'board.create', payload: {name: 'Two'}});
+    const p = await action({type: 'pin.save', payload: {board_id: c.id, note: 'test'}});
+    await expect(action({type: 'board.update', id: b.id, payload: {cover_pin_id: p.id}})).rejects.toThrow();
+  });
 });
 
-it('copies a batch with shared blobs and intact credits; rolls back invalid batches',async()=>{
- const b=await action({type:'board.create',payload:{name:'Source'}});
- const p=await action({type:'pin.save',payload:{board_id:b.id,note:'hello',source_credit:'Artist',source_url:'https://example.com'},blob:new Blob(['x'])});
- const copied=await action({type:'pin.batch',payload:{ids:[p.id],new_board_name:'Client',operation:'copy'}});
- expect(copied.pins[0].id).not.toBe(p.id);expect(copied.pins[0].file_ref).toBe(p.file_ref);expect(copied.pins[0].source_credit).toBe('Artist');expect((await snapshot()).pins).toHaveLength(2);
- await expect(action({type:'pin.batch',payload:{ids:[p.id,'missing'],new_board_name:'Rollback',operation:'move'}})).rejects.toThrow();
- expect((await snapshot()).boards.some(b=>b.name==='Rollback')).toBe(false);expect((await snapshot()).pins.find(x=>x.id===p.id)?.board_id).toBe(b.id);
- const moved=await action({type:'pin.batch',payload:{ids:[p.id],board_id:copied.id,operation:'move'}});expect(moved.pins[0].version).toBe(2);
+it('copies a batch with shared blobs and intact credits; rolls back invalid batches', async () => {
+  const b = await action({type: 'board.create', payload: {name: 'Source'}});
+  const p = await action({
+    type: 'pin.save',
+    payload: {board_id: b.id, note: 'hello', source_credit: 'Artist', source_url: 'https://example.com'},
+    blob: new Blob(['x']),
+  });
+  const copied = await action({type: 'pin.batch', payload: {ids: [p.id], new_board_name: 'Client', operation: 'copy'}});
+  expect(copied.pins[0].id).not.toBe(p.id);
+  expect(copied.pins[0].file_ref).toBe(p.file_ref);
+  expect(copied.pins[0].source_credit).toBe('Artist');
+  expect((await snapshot()).pins).toHaveLength(2);
+  await expect(
+    action({type: 'pin.batch', payload: {ids: [p.id, 'missing'], new_board_name: 'Rollback', operation: 'move'}}),
+  ).rejects.toThrow();
+  expect((await snapshot()).boards.some(b => b.name === 'Rollback')).toBe(false);
+  expect((await snapshot()).pins.find(x => x.id === p.id)?.board_id).toBe(b.id);
+  const moved = await action({type: 'pin.batch', payload: {ids: [p.id], board_id: copied.id, operation: 'move'}});
+  expect(moved.pins[0].version).toBe(2);
 });
-it('stores demo settings without publishing or storing a password',async()=>{const b=await action({type:'board.create',payload:{name:'Client'}});const r=await action({type:'board.share_settings',id:b.id,payload:{mode:'password',permission:'view',password:'must not store'}});expect(r.visibility).toBe('private');expect(r.share_settings).toEqual({mode:'password',permission:'view'});expect(JSON.stringify(await(await database).getAll('outbox'))).not.toContain('must not store');});
+it('stores demo settings without publishing or storing a password', async () => {
+  const b = await action({type: 'board.create', payload: {name: 'Client'}});
+  const r = await action({
+    type: 'board.share_settings',
+    id: b.id,
+    payload: {mode: 'password', permission: 'view', password: 'must not store'},
+  });
+  expect(r.visibility).toBe('private');
+  expect(r.share_settings).toEqual({mode: 'password', permission: 'view'});
+  expect(JSON.stringify(await (await database).getAll('outbox'))).not.toContain('must not store');
+});
 
-it('keeps stars and image notes scoped to the board and versions toggles',async()=>{
- const b=await action({type:'board.create',payload:{name:'Client'}}),other=await action({type:'board.create',payload:{name:'Other'}});
- const p=await action({type:'pin.save',payload:{board_id:b.id,note:'Reference'}});
- await expect(action({type:'feedback.star',payload:{board_id:other.id,pin_id:p.id}})).rejects.toThrow();
- await expect(action({type:'feedback.add',payload:{board_id:other.id,pin_id:p.id,text:'Wrong board'}})).rejects.toThrow();
- const star=await action({type:'feedback.star',payload:{board_id:b.id,pin_id:p.id}});
- const unstar=await action({type:'feedback.star',payload:{board_id:b.id,pin_id:p.id}});
- expect(unstar.id).toBe(star.id);expect(unstar.starred).toBe(false);expect(unstar.version).toBe(2);
- await action({type:'feedback.add',payload:{board_id:b.id,pin_id:p.id,text:'Love this texture'}});
- expect((await snapshot()).feedback).toHaveLength(2);
+it('keeps stars and image notes scoped to the board and versions toggles', async () => {
+  const b = await action({type: 'board.create', payload: {name: 'Client'}}),
+    other = await action({type: 'board.create', payload: {name: 'Other'}});
+  const p = await action({type: 'pin.save', payload: {board_id: b.id, note: 'Reference'}});
+  await expect(action({type: 'feedback.star', payload: {board_id: other.id, pin_id: p.id}})).rejects.toThrow();
+  await expect(
+    action({type: 'feedback.add', payload: {board_id: other.id, pin_id: p.id, text: 'Wrong board'}}),
+  ).rejects.toThrow();
+  const star = await action({type: 'feedback.star', payload: {board_id: b.id, pin_id: p.id}});
+  const unstar = await action({type: 'feedback.star', payload: {board_id: b.id, pin_id: p.id}});
+  expect(unstar.id).toBe(star.id);
+  expect(unstar.starred).toBe(false);
+  expect(unstar.version).toBe(2);
+  await action({type: 'feedback.add', payload: {board_id: b.id, pin_id: p.id, text: 'Love this texture'}});
+  expect((await snapshot()).feedback).toHaveLength(2);
 });
 
-it('undoes and redoes local board changes without deleting retained blobs',async()=>{const b=await action({type:'board.create',payload:{name:'Undo board'}});const p=await action({type:'pin.save',payload:{board_id:b.id,note:'Sketch note'},blob:new Blob(['image'])});expect(historyStatus().canUndo).toBe(true);await undo();expect((await snapshot()).pins).toHaveLength(0);expect(await(await database).get('files',p.file_ref)).toBeTruthy();expect(historyStatus().canRedo).toBe(true);await redo();expect((await snapshot()).pins[0].note).toBe('Sketch note');});
-it('stores vector annotations on a pin',async()=>{const b=await action({type:'board.create',payload:{name:'Markup'}});const p=await action({type:'pin.save',payload:{board_id:b.id,note:'Image'},blob:new Blob(['x'])});const annotations=[{id:'m1',tool:'circle',points:[{x:.1,y:.2},{x:.5,y:.7}],comment:'Look here'}];const updated=await action({type:'pin.update',id:p.id,payload:{annotations}});expect(updated.annotations).toEqual(annotations);});
+it('undoes and redoes local board changes without deleting retained blobs', async () => {
+  const b = await action({type: 'board.create', payload: {name: 'Undo board'}});
+  const p = await action({type: 'pin.save', payload: {board_id: b.id, note: 'Sketch note'}, blob: new Blob(['image'])});
+  expect(historyStatus().canUndo).toBe(true);
+  await undo();
+  expect((await snapshot()).pins).toHaveLength(0);
+  expect(await (await database).get('files', p.file_ref)).toBeTruthy();
+  expect(historyStatus().canRedo).toBe(true);
+  await redo();
+  expect((await snapshot()).pins[0].note).toBe('Sketch note');
+});
+it('stores vector annotations on a pin', async () => {
+  const b = await action({type: 'board.create', payload: {name: 'Markup'}});
+  const p = await action({type: 'pin.save', payload: {board_id: b.id, note: 'Image'}, blob: new Blob(['x'])});
+  const annotations = [
+    {
+      id: 'm1',
+      tool: 'circle',
+      points: [
+        {x: 0.1, y: 0.2},
+        {x: 0.5, y: 0.7},
+      ],
+      comment: 'Look here',
+    },
+  ];
+  const updated = await action({type: 'pin.update', id: p.id, payload: {annotations}});
+  expect(updated.annotations).toEqual(annotations);
+});
 
-it('keeps existing feedback when comments are disabled and rejects preview writes',async()=>{
- const b=await action({type:'board.create',payload:{name:'Client review'}});
- await action({type:'feedback.add',payload:{board_id:b.id,text:'Keep this direction',client_preview:true}});
- await action({type:'board.update',id:b.id,payload:{comments_enabled:false}});
- await expect(action({type:'feedback.add',payload:{board_id:b.id,text:'Blocked',client_preview:true}})).rejects.toThrow('turned off');
- expect((await snapshot()).feedback).toHaveLength(1);
- await action({type:'board.update',id:b.id,payload:{comments_enabled:true}});
- await action({type:'board.share_settings',id:b.id,payload:{mode:'public',permission:'view'}});
- await expect(action({type:'feedback.add',payload:{board_id:b.id,text:'Still blocked',client_preview:true}})).rejects.toThrow('turned off');
- await action({type:'board.share_settings',id:b.id,payload:{mode:'public',permission:'comment'}});
- await action({type:'feedback.add',payload:{board_id:b.id,text:'Now allowed',client_preview:true}});
- expect((await snapshot()).feedback).toHaveLength(2);
+it('keeps existing feedback when comments are disabled and rejects preview writes', async () => {
+  const b = await action({type: 'board.create', payload: {name: 'Client review'}});
+  await action({type: 'feedback.add', payload: {board_id: b.id, text: 'Keep this direction', client_preview: true}});
+  await action({type: 'board.update', id: b.id, payload: {comments_enabled: false}});
+  await expect(
+    action({type: 'feedback.add', payload: {board_id: b.id, text: 'Blocked', client_preview: true}}),
+  ).rejects.toThrow('turned off');
+  expect((await snapshot()).feedback).toHaveLength(1);
+  await action({type: 'board.update', id: b.id, payload: {comments_enabled: true}});
+  await action({type: 'board.share_settings', id: b.id, payload: {mode: 'public', permission: 'view'}});
+  await expect(
+    action({type: 'feedback.add', payload: {board_id: b.id, text: 'Still blocked', client_preview: true}}),
+  ).rejects.toThrow('turned off');
+  await action({type: 'board.share_settings', id: b.id, payload: {mode: 'public', permission: 'comment'}});
+  await action({type: 'feedback.add', payload: {board_id: b.id, text: 'Now allowed', client_preview: true}});
+  expect((await snapshot()).feedback).toHaveLength(2);
 });
-describe('multi-image upload',()=>{
- it('saves every image of a batch or none of them',async()=>{
-  const b=await action({type:'board.create',payload:{name:'Batch'}});const db=await database;
-  const r=await action({type:'pin.save_batch',payload:{items:[{board_id:b.id,palette:['#aabbcc']},{board_id:b.id}]},blobs:{'0':new Blob(['a']),'1':new Blob(['b'])}});
-  expect(r.pins).toHaveLength(2);expect(await db.count('files')).toBe(2);
-  await expect(action({type:'pin.save_batch',payload:{items:[{board_id:b.id},{board_id:'missing'}]},blobs:{'0':new Blob(['c']),'1':new Blob(['d'])}})).rejects.toThrow('existing board');
-  expect(await db.count('pins')).toBe(2);expect(await db.count('files')).toBe(2);
- });
+describe('multi-image upload', () => {
+  it('saves every image of a batch or none of them', async () => {
+    const b = await action({type: 'board.create', payload: {name: 'Batch'}});
+    const db = await database;
+    const r = await action({
+      type: 'pin.save_batch',
+      payload: {items: [{board_id: b.id, palette: ['#aabbcc']}, {board_id: b.id}]},
+      blobs: {'0': new Blob(['a']), '1': new Blob(['b'])},
+    });
+    expect(r.pins).toHaveLength(2);
+    expect(await db.count('files')).toBe(2);
+    await expect(
+      action({
+        type: 'pin.save_batch',
+        payload: {items: [{board_id: b.id}, {board_id: 'missing'}]},
+        blobs: {'0': new Blob(['c']), '1': new Blob(['d'])},
+      }),
+    ).rejects.toThrow('existing board');
+    expect(await db.count('pins')).toBe(2);
+    expect(await db.count('files')).toBe(2);
+  });
 });
-describe('recently deleted',()=>{
- it('restores a card or a whole board within 30 days, and returns orphaned cards to the Inbox',async()=>{
-  const inbox=await action({type:'board.create',payload:{name:'Inbox'}});const b=await action({type:'board.create',payload:{name:'Kitchen'}});
-  const p1=await action({type:'pin.save',payload:{board_id:b.id,note:'one'}});const p2=await action({type:'pin.save',payload:{board_id:b.id,note:'two'}});
-  await action({type:'pin.delete',id:p1.id});await new Promise(r=>setTimeout(r,5));await action({type:'board.delete',id:b.id});
-  const {recentlyDeleted}=await import('./data');let bin=await recentlyDeleted();
-  expect(bin.boards.map(x=>[x.board.name,x.count])).toEqual([['Kitchen',1]]);expect(bin.pins.map(p=>p.note)).toEqual(['one']);
-  await action({type:'pin.restore',id:p1.id});expect((await snapshot()).pins.find(p=>p.id===p1.id)!.board_id).toBe(inbox.id);
-  await action({type:'board.restore',id:b.id});const s=await snapshot();expect(s.boards.some(x=>x.id===b.id)).toBe(true);expect(s.pins.find(p=>p.id===p2.id)!.board_id).toBe(b.id);
-  bin=await recentlyDeleted();expect(bin.boards).toHaveLength(0);expect(bin.pins).toHaveLength(0);
- });
- it('removes only image files of cards deleted over 30 days ago that no other card uses',async()=>{
-  const b=await action({type:'board.create',payload:{name:'Old'}});const db=await database;
-  const shared=await action({type:'pin.save',payload:{board_id:b.id},blob:new Blob(['s'])});const copy=await action({type:'pin.batch',payload:{operation:'copy',ids:[shared.id],board_id:b.id}});
-  const lone=await action({type:'pin.save',payload:{board_id:b.id},blob:new Blob(['l'])});const recent=await action({type:'pin.save',payload:{board_id:b.id},blob:new Blob(['r'])});
-  const old=new Date(Date.now()-40*86400_000).toISOString();
-  for(const id of [shared.id,lone.id])await db.put('pins',{...(await db.get('pins',id)),deleted_at:old});
-  await action({type:'pin.delete',id:recent.id});
-  const outbox=await db.count('outbox');const r=await action({type:'files.purge',payload:{},recordHistory:false});
-  expect(r.counts.images).toBe(1);expect(await db.get('files',lone.file_ref)).toBeUndefined();
-  expect(await db.get('files',shared.file_ref)).toBeTruthy();expect(copy.pins[0].file_ref).toBe(shared.file_ref);expect(await db.get('files',recent.file_ref)).toBeTruthy();
-  expect(await db.count('outbox')).toBe(outbox+1);await action({type:'files.purge',payload:{},recordHistory:false});expect(await db.count('outbox')).toBe(outbox+1);
-  await expect(action({type:'pin.restore',id:lone.id})).rejects.toThrow('too long ago');
- });
+describe('recently deleted', () => {
+  it('restores a card or a whole board within 30 days, and returns orphaned cards to the Inbox', async () => {
+    const inbox = await action({type: 'board.create', payload: {name: 'Inbox'}});
+    const b = await action({type: 'board.create', payload: {name: 'Kitchen'}});
+    const p1 = await action({type: 'pin.save', payload: {board_id: b.id, note: 'one'}});
+    const p2 = await action({type: 'pin.save', payload: {board_id: b.id, note: 'two'}});
+    await action({type: 'pin.delete', id: p1.id});
+    await new Promise(r => setTimeout(r, 5));
+    await action({type: 'board.delete', id: b.id});
+    const {recentlyDeleted} = await import('./data');
+    let bin = await recentlyDeleted();
+    expect(bin.boards.map(x => [x.board.name, x.count])).toEqual([['Kitchen', 1]]);
+    expect(bin.pins.map(p => p.note)).toEqual(['one']);
+    await action({type: 'pin.restore', id: p1.id});
+    expect((await snapshot()).pins.find(p => p.id === p1.id)!.board_id).toBe(inbox.id);
+    await action({type: 'board.restore', id: b.id});
+    const s = await snapshot();
+    expect(s.boards.some(x => x.id === b.id)).toBe(true);
+    expect(s.pins.find(p => p.id === p2.id)!.board_id).toBe(b.id);
+    bin = await recentlyDeleted();
+    expect(bin.boards).toHaveLength(0);
+    expect(bin.pins).toHaveLength(0);
+  });
+  it('removes only image files of cards deleted over 30 days ago that no other card uses', async () => {
+    const b = await action({type: 'board.create', payload: {name: 'Old'}});
+    const db = await database;
+    const shared = await action({type: 'pin.save', payload: {board_id: b.id}, blob: new Blob(['s'])});
+    const copy = await action({type: 'pin.batch', payload: {operation: 'copy', ids: [shared.id], board_id: b.id}});
+    const lone = await action({type: 'pin.save', payload: {board_id: b.id}, blob: new Blob(['l'])});
+    const recent = await action({type: 'pin.save', payload: {board_id: b.id}, blob: new Blob(['r'])});
+    const old = new Date(Date.now() - 40 * 86400_000).toISOString();
+    for (const id of [shared.id, lone.id]) await db.put('pins', {...(await db.get('pins', id)), deleted_at: old});
+    await action({type: 'pin.delete', id: recent.id});
+    const outbox = await db.count('outbox');
+    const r = await action({type: 'files.purge', payload: {}, recordHistory: false});
+    expect(r.counts.images).toBe(1);
+    expect(await db.get('files', lone.file_ref)).toBeUndefined();
+    expect(await db.get('files', shared.file_ref)).toBeTruthy();
+    expect(copy.pins[0].file_ref).toBe(shared.file_ref);
+    expect(await db.get('files', recent.file_ref)).toBeTruthy();
+    expect(await db.count('outbox')).toBe(outbox + 1);
+    await action({type: 'files.purge', payload: {}, recordHistory: false});
+    expect(await db.count('outbox')).toBe(outbox + 1);
+    await expect(action({type: 'pin.restore', id: lone.id})).rejects.toThrow('too long ago');
+  });
 });
