@@ -1,171 +1,1338 @@
 import {bindImagePan} from './pan';
 import './style.css';
 import {bindMarquee} from './selection';
-import {openGallery,openPresentation} from './viewer';
-import {createIcons, LayoutGrid, Inbox, PanelsTopLeft, Plus, Square, FolderInput, Sun, Moon, HardDrive, Eye, Lock, Ellipsis, Users, Search, ImagePlus, Quote, Link, ArrowLeft, X, Camera, ExternalLink, Image as ImageIcon, Trash2, MessageCircle, ChevronLeft, ChevronRight, Undo2, Redo2, Pencil, StickyNote, ArrowLeftRight, UserRound} from 'lucide';
-const icons={LayoutGrid,Inbox,PanelsTopLeft,Plus,Square,FolderInput,Sun,Moon,HardDrive,Eye,Lock,Ellipsis,Users,Search,ImagePlus,Quote,Link,ArrowLeft,X,Camera,ExternalLink,Image:ImageIcon,Trash2,MessageCircle,ChevronLeft,ChevronRight,Undo2,Redo2,Pencil,StickyNote,ArrowLeftRight,UserRound};
-import {recentlyDeleted,RETENTION_DAYS,initialize,snapshot,action,file,undo,redo,historyStatus,type Board,type Pin,type Feedback} from './data';
-import {palette,optimizeImage,IMAGE_ACCEPT,isImageFile} from './media';
+import {openGallery, openPresentation} from './viewer';
+import {
+  createIcons,
+  LayoutGrid,
+  Inbox,
+  PanelsTopLeft,
+  Plus,
+  Square,
+  FolderInput,
+  Sun,
+  Moon,
+  HardDrive,
+  Eye,
+  Lock,
+  Ellipsis,
+  Users,
+  Search,
+  ImagePlus,
+  Quote,
+  Link,
+  ArrowLeft,
+  X,
+  Camera,
+  ExternalLink,
+  Image as ImageIcon,
+  Trash2,
+  MessageCircle,
+  ChevronLeft,
+  ChevronRight,
+  Undo2,
+  Redo2,
+  Pencil,
+  StickyNote,
+  ArrowLeftRight,
+  UserRound,
+} from 'lucide';
+const icons = {
+  LayoutGrid,
+  Inbox,
+  PanelsTopLeft,
+  Plus,
+  Square,
+  FolderInput,
+  Sun,
+  Moon,
+  HardDrive,
+  Eye,
+  Lock,
+  Ellipsis,
+  Users,
+  Search,
+  ImagePlus,
+  Quote,
+  Link,
+  ArrowLeft,
+  X,
+  Camera,
+  ExternalLink,
+  Image: ImageIcon,
+  Trash2,
+  MessageCircle,
+  ChevronLeft,
+  ChevronRight,
+  Undo2,
+  Redo2,
+  Pencil,
+  StickyNote,
+  ArrowLeftRight,
+  UserRound,
+};
+import {
+  recentlyDeleted,
+  RETENTION_DAYS,
+  initialize,
+  snapshot,
+  action,
+  file,
+  undo,
+  redo,
+  historyStatus,
+  type Board,
+  type Pin,
+  type Feedback,
+} from './data';
+import {palette, optimizeImage, IMAGE_ACCEPT, isImageFile} from './media';
 import {colourWords} from './colour';
-import {exportBoard,exportLibrary,importAny} from './backup';
-import {openMarkup,annotationOverlay} from './markup';
-import {bindTouchZoom,zoomAt,recentTouchDoubleTap} from './zoom';
-import {startSync,syncNow,syncStatus,onSyncStatus,listShares,createShare,revokeShare,shareUrl,type Permission} from './sync';
+import {exportBoard, exportLibrary, importAny} from './backup';
+import {openMarkup, annotationOverlay} from './markup';
+import {bindTouchZoom, zoomAt, recentTouchDoubleTap} from './zoom';
+import {
+  startSync,
+  syncNow,
+  syncStatus,
+  onSyncStatus,
+  listShares,
+  createShare,
+  revokeShare,
+  shareUrl,
+  type Permission,
+} from './sync';
 import {studioSyncOn} from './studio-session';
-const root=document.querySelector<HTMLDivElement>('#app')!;
-const esc=(s:unknown)=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]!));
-const buildDate=new Date(__BUILD_TIME__);
-const buildVersion='v'+__BUILD_TIME__.slice(0,10).replaceAll('-','.')+'-'+__BUILD_TIME__.slice(11,16).replace(':','');
-const buildLabel=new Intl.DateTimeFormat('en-US',{timeZone:'America/New_York',month:'short',day:'numeric',year:'numeric',hour:'numeric',minute:'2-digit'}).format(buildDate);
-const icon=(s:string)=>`<i data-lucide="${s}"></i>`;
-let state:Awaited<ReturnType<typeof snapshot>>,view='all',query='',filter='all',pickClient='',client=false,selected:Pin|null=null;
-const urls=new Map<string,string>();let picked:File|undefined;let selecting=false;const selection=new Set<string>();
-let visiblePins:Pin[]=[];let selectionAnchor:string|null=null;
-let theme=localStorage.getItem('studio-wall-theme')||'dark';document.documentElement.dataset.theme=theme;
-const navTrail=['all'];let navIndex=0;
-function navigate(next:string,record=true,redraw=true){if(next===view){if(redraw)render();return;}view=next;query='';filter='all';pickClient='';selection.clear();selecting=false;selectionAnchor=null;client=false;if(record){navTrail.splice(navIndex+1);navTrail.push(next);navIndex=navTrail.length-1;}if(redraw)render();}
-function back(){if(navIndex>0){navIndex--;navigate(navTrail[navIndex],false);}}
-function forward(){if(navIndex<navTrail.length-1){navIndex++;navigate(navTrail[navIndex],false);}}
-const boardNow=()=>state.boards.find(b=>b.id===view);
-const pinsFor=(id:string)=>state.pins.filter(p=>p.board_id===id);
+const root = document.querySelector<HTMLDivElement>('#app')!;
+const esc = (s: unknown) =>
+  String(s ?? '').replace(/[&<>"']/g, c => ({'&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'})[c]!);
+const buildDate = new Date(__BUILD_TIME__);
+const buildVersion =
+  'v' + __BUILD_TIME__.slice(0, 10).replaceAll('-', '.') + '-' + __BUILD_TIME__.slice(11, 16).replace(':', '');
+const buildLabel = new Intl.DateTimeFormat('en-US', {
+  timeZone: 'America/New_York',
+  month: 'short',
+  day: 'numeric',
+  year: 'numeric',
+  hour: 'numeric',
+  minute: '2-digit',
+}).format(buildDate);
+const icon = (s: string) => `<i data-lucide="${s}"></i>`;
+let state: Awaited<ReturnType<typeof snapshot>>,
+  view = 'all',
+  query = '',
+  filter = 'all',
+  pickClient = '',
+  client = false,
+  selected: Pin | null = null;
+const urls = new Map<string, string>();
+let picked: File | undefined;
+let selecting = false;
+const selection = new Set<string>();
+let visiblePins: Pin[] = [];
+let selectionAnchor: string | null = null;
+let theme = localStorage.getItem('studio-wall-theme') || 'dark';
+document.documentElement.dataset.theme = theme;
+const navTrail = ['all'];
+let navIndex = 0;
+function navigate(next: string, record = true, redraw = true) {
+  if (next === view) {
+    if (redraw) render();
+    return;
+  }
+  view = next;
+  query = '';
+  filter = 'all';
+  pickClient = '';
+  selection.clear();
+  selecting = false;
+  selectionAnchor = null;
+  client = false;
+  if (record) {
+    navTrail.splice(navIndex + 1);
+    navTrail.push(next);
+    navIndex = navTrail.length - 1;
+  }
+  if (redraw) render();
+}
+function back() {
+  if (navIndex > 0) {
+    navIndex--;
+    navigate(navTrail[navIndex], false);
+  }
+}
+function forward() {
+  if (navIndex < navTrail.length - 1) {
+    navIndex++;
+    navigate(navTrail[navIndex], false);
+  }
+}
+const boardNow = () => state.boards.find(b => b.id === view);
+const pinsFor = (id: string) => state.pins.filter(p => p.board_id === id);
 // Your own stars (and the local client preview's); stars from share links are client picks, counted per guest.
-const starred=(p:Pin)=>state.feedback.some(f=>f.board_id===p.board_id&&f.pin_id===p.id&&f.starred&&!f.author_name);
-const clientStars=(p:Pin)=>state.feedback.filter(f=>f.board_id===p.board_id&&f.pin_id===p.id&&f.starred&&f.author_name);
-const pickers=(id:string)=>{const m=new Map<string,{name:string;n:number}>();for(const p of pinsFor(id))for(const f of clientStars(p)){const e=m.get(f.created_by)||{name:f.author_name!,n:0};e.n++;m.set(f.created_by,e);}return [...m].map(([by,v])=>({by,...v})).sort((a,b)=>b.n-a.n||a.name.localeCompare(b.name));};
-const isPick=(p:Pin)=>clientStars(p).some(f=>!pickClient||f.created_by===pickClient);
-const commentsAllowed=(id:string)=>{const b=state.boards.find(b=>b.id===id);return !!b&&b.comments_enabled!==false&&b.share_settings?.permission!=='view';};
+const starred = (p: Pin) =>
+  state.feedback.some(f => f.board_id === p.board_id && f.pin_id === p.id && f.starred && !f.author_name);
+const clientStars = (p: Pin) =>
+  state.feedback.filter(f => f.board_id === p.board_id && f.pin_id === p.id && f.starred && f.author_name);
+const pickers = (id: string) => {
+  const m = new Map<string, {name: string; n: number}>();
+  for (const p of pinsFor(id))
+    for (const f of clientStars(p)) {
+      const e = m.get(f.created_by) || {name: f.author_name!, n: 0};
+      e.n++;
+      m.set(f.created_by, e);
+    }
+  return [...m].map(([by, v]) => ({by, ...v})).sort((a, b) => b.n - a.n || a.name.localeCompare(b.name));
+};
+const isPick = (p: Pin) => clientStars(p).some(f => !pickClient || f.created_by === pickClient);
+const commentsAllowed = (id: string) => {
+  const b = state.boards.find(b => b.id === id);
+  return !!b && b.comments_enabled !== false && b.share_settings?.permission !== 'view';
+};
 // New client activity (comments and stars arriving from share links). "Seen" marks are a per-device convenience only.
-const SEEN_KEY='studio-wall-client-seen';
-const seenMarks=():Record<string,string>=>{try{return JSON.parse(localStorage.getItem(SEEN_KEY)||'{}');}catch{return {};}};
-const markSeen=(id:string)=>{try{const s=seenMarks();s[id]=new Date().toISOString();localStorage.setItem(SEEN_KEY,JSON.stringify(s));}catch{}};
-const clientAdds=(id:string,since=seenMarks()[id]||'')=>state.pins.filter(p=>p.board_id===id&&p.contributor_name&&p.created_at>since);
-const clientNews=(id:string,since=seenMarks()[id]||'')=>state.feedback.filter(f=>f.board_id===id&&f.author_name&&(f.text||f.starred)&&f.updated_at>since);
+const SEEN_KEY = 'studio-wall-client-seen';
+const seenMarks = (): Record<string, string> => {
+  try {
+    return JSON.parse(localStorage.getItem(SEEN_KEY) || '{}');
+  } catch {
+    return {};
+  }
+};
+const markSeen = (id: string) => {
+  try {
+    const s = seenMarks();
+    s[id] = new Date().toISOString();
+    localStorage.setItem(SEEN_KEY, JSON.stringify(s));
+  } catch {}
+};
+const clientAdds = (id: string, since = seenMarks()[id] || '') =>
+  state.pins.filter(p => p.board_id === id && p.contributor_name && p.created_at > since);
+const clientNews = (id: string, since = seenMarks()[id] || '') =>
+  state.feedback.filter(f => f.board_id === id && f.author_name && (f.text || f.starred) && f.updated_at > since);
 // Cards a client removed through a contribute link (deleted_by guest:…); they wait in Recently deleted.
-const clientRemovals=(id:string,since=seenMarks()[id]||'')=>state.removed.filter(p=>p.board_id===id&&String(p.deleted_at)>since);
-const clientCount=(id:string)=>clientNews(id).length+clientAdds(id).length+clientRemovals(id).length;
-const newsBadge=(id:string)=>{const n=clientCount(id);return n?`<b class="client-news" title="${n} new from clients">${n}</b>`:'';};
-let visitBoard='',visitSince='';
-const author=(f:Feedback)=>f.author_name?f.author_name:'You';
-const image=(p:Pin)=>p.file_ref?urls.get(p.file_ref):null;
-function toast(text:string){document.querySelector('.toast')?.remove();const el=document.createElement('div');el.className='toast';el.role='status';el.textContent=text;document.body.append(el);setTimeout(()=>el.remove(),4500);}
-async function refresh(){state=await snapshot();if(!['all','boards'].includes(view)&&!state.boards.some(b=>b.id===view))view='all';for(const p of state.pins)if(p.file_ref&&!urls.has(p.file_ref)){const blob=await file(p.file_ref);if(blob)urls.set(p.file_ref,URL.createObjectURL(blob));}render();}
-function chips(p:Pin){return `<div class="swatches">${p.palette.map(c=>`<button type="button" class="swatch" style="background:${esc(c)}" title="Find ${esc(c)}" aria-label="Find colour ${esc(c)}" data-colour="${esc(c)}"></button>`).join('')}</div>`;}
-function card(p:Pin){const img=image(p),marks=p.annotations?.length||0;return `<div class="pin-wrap ${selection.has(p.id)?'is-selected':''}" draggable="true" data-drag-pin="${p.id}">${selecting?`<button class="select-pin" data-select-pin="${p.id}" aria-label="Select ${esc(p.meta.title||'reference')}" aria-pressed="${selection.has(p.id)}">${selection.has(p.id)?'✓':'○'}</button>`:''}<button class="pin ${img?'':'text-pin'}" data-pin="${p.id}">${img?`<img draggable="false" src="${img}" alt="${esc(p.meta.title||p.note||'Saved inspiration')}" loading="lazy">`:`<div class="idea-content">${icon(p.meta.kind==='link'?'link':'quote')}<p>${esc(p.note||p.meta.title||p.source_url)}</p></div>`}<div class="caption"><strong>${starred(p)?'★ ':''}${esc(p.meta.title||(p.meta.kind==='idea'?'A thought to keep':'Untitled reference'))}</strong><span>${p.contributor_name?`<span class="client-stars">Added by ${esc(p.contributor_name)}</span>${p.source_credit?' · '+esc(p.source_credit):''}`:esc(p.is_own?'My own work':p.source_credit||'Credit not added')}${p.source_url?' · Source ↗':''}${!client&&clientStars(p).length?` · <span class="client-stars" title="Starred by ${esc(clientStars(p).map(f=>f.author_name).join(', '))}">★ ${clientStars(p).length} client${clientStars(p).length===1?'':'s'}</span>`:''}${state.feedback.filter(f=>f.pin_id===p.id&&f.board_id===p.board_id&&f.text).length?` · ${state.feedback.filter(f=>f.pin_id===p.id&&f.board_id===p.board_id&&f.text).length} comments`:''}${marks?` · ${marks} markup${marks===1?'':'s'}`:''}</span></div></button></div>`;}
-function render(){
- // Remember when this board was last opened, so client comments that arrived since are highlighted during this visit.
- if(view!==visitBoard){visitBoard=view;visitSince=seenMarks()[view]||'';}
- if(state.boards.some(b=>b.id===view)&&!client)markSeen(view);for(const id of selection)if(!state.pins.some(p=>p.id===id))selection.delete(id);const board=boardNow();if(client&&!board)client=false;const inbox=state.boards.find(b=>b.name==='Inbox');const title=board?.name||(view==='boards'?'Your boards':'All inspiration');let pins=board?pinsFor(board.id):state.pins;
- if(query){const q=query.toLowerCase();pins=pins.filter(p=>[p.note,p.meta.title,p.source_credit,...p.tags,...p.palette,...p.palette.flatMap(colourWords)].join(' ').toLowerCase().includes(q));}
- const picks=board&&!client?pickers(board.id):[];if(pickClient&&!picks.some(c=>c.by===pickClient))pickClient='';if(filter==='picks'&&!picks.length)filter='all';
- if(filter!=='all')pins=pins.filter(p=>filter==='starred'?starred(p):filter==='picks'?isPick(p):filter==='images'?p.meta.kind==='image':p.meta.kind!=='image');pins=[...pins].sort((a,b)=>(filter==='picks'?clientStars(b).length-clientStars(a).length:0)||b.created_at.localeCompare(a.created_at));visiblePins=pins;
- root.innerHTML=`<aside class="sidebar"><a class="brand" href="#">STUDIO<span>WALL</span><b>◧</b></a><div class="workspace-label">YOUR CREATIVE SPACE</div><nav>${[['all','layout-grid','All inspiration'],[inbox?.id||'','inbox','Inbox'],['boards','panels-top-left','Boards']].map(([id,ic,n])=>`<button data-nav="${id}" class="nav-item ${view===id?'active':''}">${icon(ic)}${n}${id===inbox?.id?`<small>${pinsFor(id).length}</small>`:''}</button>`).join('')}</nav><div class="section-label">MY BOARDS<button data-action="new-board" aria-label="Create board">${icon('plus')}</button></div><div class="board-nav">${state.boards.filter(b=>b.name!=='Inbox').map(b=>`<button class="nav-item ${view===b.id?'active':''}" data-nav="${b.id}">${icon('square')}<span>${esc(b.name)}</span>${newsBadge(b.id)}</button>`).join('')||'<p class="hint">Make room for your next idea.</p>'}</div><div class="sidebar-foot"><button data-action="sample">${icon('panels-top-left')} Try collaboration demo</button><button data-action="library">${icon('arrow-left-right')} Back up / move devices</button><button data-action="studio">${icon('user-round')} Studio account</button><button data-action="trash">${icon('trash-2')} Recently deleted</button><button data-action="theme">${icon(theme==='dark'?'sun':'moon')} ${theme==='dark'?'Light':'Dark'} mode</button><span class="sync-label">${icon('hard-drive')} ${esc(syncLabel())}</span></div></aside>
- <main><header class="mobile-brand">STUDIO WALL<button data-action="library" data-sync="${syncState()}" title="${esc(syncLabel())}" aria-label="Back up, move devices and sync status">${icon('arrow-left-right')}</button><button data-action="theme" aria-label="Toggle colour theme">${icon(theme==='dark'?'sun':'moon')}</button></header>${client?`<div class="preview-banner">${icon('eye')} Client preview · on this device only<button data-action="exit-preview">Exit preview</button></div>`:''}<div class="topline"><div><div class="eyebrow">${client?'A BOARD TO EXPLORE TOGETHER':board?'COLLECTION':'COLLECT. CONNECT. CREATE.'}</div><h1>${esc(title)}<span class="private">${icon('lock')} Private</span></h1><div class="app-history"><button data-action="back" aria-label="Back" title="Back" ${navIndex===0?'disabled':''}>${icon('chevron-left')}</button><button data-action="forward" aria-label="Forward" title="Forward" ${navIndex>=navTrail.length-1?'disabled':''}>${icon('chevron-right')}</button><span></span><button data-action="undo" aria-label="Undo" title="Undo" ${historyStatus().canUndo?'':'disabled'}>${icon('undo-2')}</button><button data-action="redo" aria-label="Redo" title="Redo" ${historyStatus().canRedo?'':'disabled'}>${icon('redo-2')}</button></div></div><div class="header-actions">${board&&!client?`<button class="secondary" data-action="board-menu" aria-label="Board options">${icon('ellipsis')}</button><button class="secondary" data-action="share">${icon('users')}<span>Collaborate</span></button>`:''}<button class="primary" data-action="save" ${client&&board?.share_settings?.permission!=='contribute'?'disabled':''}>${icon('plus')} ${client?'Add reference':'Add'}</button></div></div>
- ${['all','boards'].includes(view)?(()=>{const news=state.boards.map(b=>({b,n:clientCount(b.id)})).filter(x=>x.n);return news.length?`<div class="client-news-bar">${icon('message-circle')} New from clients:${news.map(x=>`<button data-nav="${x.b.id}">${esc(x.b.name)} <b class="client-news">${x.n}</b></button>`).join('')}</div>`:'';})():''}${board&&!client?(()=>{const gone=clientRemovals(board.id,visitSince);if(!gone.length)return '';const names=[...new Set(gone.map(p=>p.contributor_name||'A client'))];return `<div class="client-news-bar">${icon('trash-2')} ${esc(names.join(', '))} removed ${gone.length===1?`“${esc(gone[0].meta.title||gone[0].note||'a card')}”`:gone.length+' cards'} they added.<button data-action="trash">Recently deleted</button></div>`;})():''}
- <p class="intro">${esc(board?.description||(view==='boards'?'Gather references around a project, a palette, or a possibility.':'Images, materials, and ideas worth coming back to.'))}</p>
- ${view==='boards'?`<div class="board-grid">${state.boards.map(b=>{const ps=pinsFor(b.id);const cover=ps.find(p=>p.id===b.cover_pin_id)||ps.find(p=>image(p));return `<article class="board-card"><button data-nav="${b.id}"><div class="board-cover">${cover&&image(cover)?`<img src="${image(cover)}" alt="${esc(b.name)}">`:`${icon('panels-top-left')}<span>${esc(b.name)}</span>`}</div><h3>${esc(b.name)}${newsBadge(b.id)}</h3><p>${ps.length} reference${ps.length===1?'':'s'}</p></button><div class="board-order"><button data-up="${b.id}" aria-label="Move ${esc(b.name)} earlier">${icon('arrow-left')}</button></div></article>`;}).join('')}<button class="new-board-card" data-action="new-board">${icon('plus')}Create a board</button></div>`:`<div class="toolbar"><label class="search">${icon('search')}<input id="search" value="${esc(query)}" placeholder="Search notes, tags or colours (e.g. blue, warm)" aria-label="Search inspiration"><kbd>/</kbd></label><div class="filters">${[['all','All'],['images','Images'],['ideas','Ideas & links'],['starred','★ Starred'],...(picks.length?[['picks','Client picks']]:[])].map(([id,n])=>`<button data-filter="${id}" class="${filter===id?'chosen':''}">${n}</button>`).join('')}</div><button class="secondary" data-action="present">Present / PDF</button><button class="secondary selection-toggle" data-action="select">${selecting?'Done':'Select'}</button><span class="count">${pins.length} reference${pins.length===1?'':'s'}</span></div>${filter==='picks'?`<div class="pick-clients" role="group" aria-label="Choose a client"><span>Starred by</span><button data-pick-client="" class="${pickClient?'':'chosen'}">All clients</button>${picks.map(c=>`<button data-pick-client="${esc(c.by)}" class="${pickClient===c.by?'chosen':''}">${esc(c.name)} <b>${c.n}</b></button>`).join('')}</div>`:''}${selecting||selection.size?`<div class="selection-bar"><strong>${selection.size} selected</strong><button data-action="select-all">Select visible</button><button data-action="clear-selection">Clear</button>${boardNow()&&!client?`<button data-action="share-selected" ${selection.size?'':'disabled'}>Share selected</button>`:''}<button class="primary" data-action="transfer" ${selection.size?'':'disabled'}>Copy / move to board</button></div>`:''}<p class="selection-hint">Drag a selection box from empty space around images, then drag the group onto a board · Shift / ⌘ / Ctrl to add</p>${pins.length?`<div class="masonry">${pins.map(card).join('')}</div>`:`<div class="empty"><div class="empty-icon">${icon(query?'search':'image-plus')}</div><h2>${query?'Nothing here yet.':'A little space for your next big idea.'}</h2><p>${query?'Try another note, tag, or palette hex colour.':'Drop an image here, save a link, or jot down a thought. Your collection starts with one reference.'}</p>${!query?'<button class="primary" data-action="save">Save your first reference</button><button class="text-button" data-action="sample">Try a sample board</button>':''}</div>`}`}
- ${board?`<section class="feedback"><div><div class="eyebrow">THE CONVERSATION</div><h2>Thoughts & direction</h2><p>Your notes and your clients’ comments from share links, together. With sync on they reach all your devices.</p></div><div>${state.feedback.filter(f=>f.board_id===board.id&&f.text).map(f=>`<article class="${f.author_name&&f.updated_at>visitSince?'is-new':''}"><strong>${esc(author(f))} <small>${f.author_name?'Client link':'This device'}${f.pin_id?' · '+esc(state.pins.find(p=>p.id===f.pin_id)?.meta.title||'Reference'):''}</small></strong><p>${esc(f.text)}</p></article>`).join('')}<form id="feedback-form" ${client&&!commentsAllowed(board.id)?'hidden':''}><label for="feedback-text">Add a thought</label><textarea id="feedback-text" required maxlength="4000" placeholder="What speaks to you about this direction?"></textarea><button class="primary">Add comment</button></form></div></section>`:''}<footer class="page-foot">Your inspiration, in one place.<span>Private · only you and the clients you share links with</span><span class="build-stamp" title="Version uses UTC; build time shown in Eastern Time"><strong>${buildVersion}</strong> · built <time datetime="${__BUILD_TIME__}">${buildLabel} ET</time></span></footer></main><nav class="mobile-nav"><button data-nav="all" class="${view==='all'?'active':''}">${icon('layout-grid')}Inspiration</button><button data-nav="boards" class="${view==='boards'?'active':''}">${icon('panels-top-left')}Boards</button><button class="mobile-save" data-action="save">${icon('plus')}Save</button></nav><input id="zip-input" type="file" accept=".zip" hidden><dialog id="modal"></dialog>`;
- bind();createIcons({icons});
+const clientRemovals = (id: string, since = seenMarks()[id] || '') =>
+  state.removed.filter(p => p.board_id === id && String(p.deleted_at) > since);
+const clientCount = (id: string) => clientNews(id).length + clientAdds(id).length + clientRemovals(id).length;
+const newsBadge = (id: string) => {
+  const n = clientCount(id);
+  return n ? `<b class="client-news" title="${n} new from clients">${n}</b>` : '';
+};
+let visitBoard = '',
+  visitSince = '';
+const author = (f: Feedback) => (f.author_name ? f.author_name : 'You');
+const image = (p: Pin) => (p.file_ref ? urls.get(p.file_ref) : null);
+function toast(text: string) {
+  document.querySelector('.toast')?.remove();
+  const el = document.createElement('div');
+  el.className = 'toast';
+  el.role = 'status';
+  el.textContent = text;
+  document.body.append(el);
+  setTimeout(() => el.remove(), 4500);
 }
-function show(content:string,wide=false){const d=document.querySelector<HTMLDialogElement>('#modal')!;d.className=wide?'wide':'';d.innerHTML=`<button class="close" aria-label="Close">${icon('x')}</button>${content}`;d.querySelector('.close')!.addEventListener('click',()=>d.close());d.onclick=e=>{if(e.target===d)d.close();};d.showModal();createIcons({icons});return d;}
-function options(id?:string){return state.boards.map(b=>`<option value="${b.id}" ${id===b.id?'selected':''}>${esc(b.name)}</option>`).join('');}
-function quickAddDialog(){const d=show(`<div class="dialog-heading"><div class="eyebrow">ADD TO THIS BOARD</div><h2>What are you adding?</h2><p>Keep it fast — an image, a standalone note, or a useful link.</p></div><div class="quick-add"><button data-kind="image">${icon('image-plus')}<strong>Image / photo</strong><span>Upload, camera, drag or paste</span></button><button data-kind="idea">${icon('sticky-note')}<strong>Note / idea</strong><span>Add a thought directly to the board</span></button><button data-kind="link">${icon('link')}<strong>Link</strong><span>Save a URL with an optional note</span></button></div>`);d.querySelectorAll<HTMLButtonElement>('[data-kind]').forEach(b=>b.onclick=()=>{const kind=b.dataset.kind as 'image'|'idea'|'link';d.close();saveDialog(undefined,kind);});}
-function saveDialog(files?:File[],mode:'image'|'idea'|'link'='image'){picked=files?.[0];if(files?.length)mode='image';const title=mode==='idea'?'Add a note or idea':mode==='link'?'Save a link':client?'Add a reference':'Add images';const imageFields=mode==='image'?`<label class="upload-zone" for="upload">${icon('image-plus')}<strong id="picked-name">${esc(picked?.name||'Choose images or drop them here')}</strong><span>JPEG, PNG, WebP, HEIC, AVIF, GIF, TIFF · optimized to WebP, max 2400px</span></label><input id="upload" type="file" accept="${IMAGE_ACCEPT}" multiple hidden><label class="camera-button">${icon('camera')} Take a photo<input id="camera" type="file" accept="image/*" capture="environment" hidden></label>`:'';const linkField=mode==='link'?'<label>Link<input name="source_url" type="url" required placeholder="https://…"></label>':mode==='image'?'<label>Original link <span>optional</span><input name="source_url" type="url" placeholder="https://…"></label>':'';const noteLabel=mode==='idea'?'Note / idea':'Note';const d=show(`<div class="dialog-heading"><div class="eyebrow">KEEP SOMETHING GOOD</div><h2>${title}</h2><p>${mode==='idea'?'This becomes its own card in the board — no image required.':mode==='link'?'Save a reference now and come back to it later.':'Add one image or a batch.'}</p></div><form id="save-form">${imageFields}<div class="form-row"><label>Title <span>optional</span><input name="title" placeholder="${mode==='idea'?'Short heading':'What caught your eye?'}"></label><label>Board<select name="board_id">${options(boardNow()?.id||state.boards.find(b=>b.name==='Inbox')?.id)}</select></label></div>${linkField}<label>${noteLabel}<textarea name="note" rows="4" ${mode==='idea'?'required':''} placeholder="${mode==='idea'?'Write the thought you want to keep on this board…':'A color, texture, direction, or context…'}"></textarea></label><div class="form-row"><label>Source / creator credit<input name="source_credit" placeholder="Who made or shared it?"></label><label>Tags<input name="tags" placeholder="plaster, warm tones, sculpture"></label></div><label class="checkbox"><input type="checkbox" name="is_own"> This is my own work / note</label><p class="form-help">Notes and links live in the board just like images and can be moved, copied, searched, selected, or shared later.</p><p class="error" role="alert"></p><button class="primary submit">${icon('plus')} Add to board</button></form>`);
- let batch=files||[];for(const id of ['upload','camera'])d.querySelector<HTMLInputElement>('#'+id)?.addEventListener('change',e=>{batch=Array.from((e.target as HTMLInputElement).files||[]);d.querySelector('#picked-name')!.textContent=batch.length>1?`${batch.length} images selected`:batch[0]?.name||'Choose images';});
- d.querySelector<HTMLFormElement>('form')!.onsubmit=async e=>{e.preventDefault();const form=e.target as HTMLFormElement,submit=form.querySelector<HTMLButtonElement>('.submit')!;submit.disabled=true;try{const values=Object.fromEntries(new FormData(form));const payload={...values,is_own:values.is_own==='on',tags:String(values.tags||'').split(',').map(t=>t.trim()).filter(Boolean)};// Prepare every image first, then save them in one step, so a failure part-way leaves nothing half-added.
- const items:any[]=[],blobs:Record<string,Blob>={};const sources=batch.length?batch:[undefined];for(const [i,source] of sources.entries()){if(source&&source.size>50*1024*1024)throw Error('Please use images smaller than 50 MB.');if(sources.length>1)submit.textContent=`Preparing ${i+1} of ${sources.length}…`;const blob=source?await optimizeImage(source):undefined;if(blob)blobs[String(i)]=blob;items.push({...payload,palette:blob?await palette(blob):[]});}
- await action({type:'pin.save_batch',payload:{items},blobs});navigate(String(values.board_id),true,false);d.close();await refresh();toast(mode==='idea'?'Note added to board':mode==='link'?'Link added to board':'Saved to your board');}catch(e){d.querySelector('.error')!.textContent=(e as Error).message;}finally{submit.disabled=false;submit.innerHTML=`${icon('plus')} Add to board`;createIcons({icons});}};
+async function refresh() {
+  state = await snapshot();
+  if (!['all', 'boards'].includes(view) && !state.boards.some(b => b.id === view)) view = 'all';
+  for (const p of state.pins)
+    if (p.file_ref && !urls.has(p.file_ref)) {
+      const blob = await file(p.file_ref);
+      if (blob) urls.set(p.file_ref, URL.createObjectURL(blob));
+    }
+  render();
 }
-function focusPin(p:Pin){selected=p;const position=visiblePins.findIndex(x=>x.id===p.id);const d=show(`<nav class="focus-toolbar" aria-label="Reference navigation"><button id="back-board">${icon('arrow-left')} Back to board</button><div><button id="prev-pin" aria-label="Previous reference" ${position<=0?'disabled':''}>${icon('chevron-left')}</button><span>${position+1} / ${visiblePins.length}</span><button id="next-pin" aria-label="Next reference" ${position>=visiblePins.length-1?'disabled':''}>${icon('chevron-right')}</button></div><button id="jump-comments">${icon('message-circle')} Comments</button>${!client?`<div class="quick-board-save"><select id="save-board" aria-label="Save a copy to board">${options(p.board_id)}</select><button id="quick-save-pin" class="primary">Save a copy</button></div>`:''}</nav><div class="focus-layout"><div class="focus-image"><div class="image-controls"><button id="zoom-out" aria-label="Zoom out">−</button><button id="zoom-fit">Fit</button><button id="zoom-in" aria-label="Zoom in">+</button><button id="open-gallery">Expand gallery</button></div><div class="image-scroll">${image(p)?`<div class="annotated-image"><img src="${image(p)}" alt="${esc(p.meta.title||'Saved reference')}">${annotationOverlay(p.annotations||[])}</div>`:`<blockquote>${esc(p.note||p.source_url)}</blockquote>`}</div></div><div class="inspector"><div class="eyebrow">SAVED INSPIRATION</div><h2>${esc(p.meta.title||'A reference to return to')}</h2>${chips(p)}<form id="edit-form"><label>Title<input name="title" value="${esc(p.meta.title)}"></label><label>Board<select name="board_id">${options(p.board_id)}</select></label><label>Notes<textarea name="note" rows="4">${esc(p.note)}</textarea></label><label>Tags<input name="tags" value="${esc(p.tags.join(', '))}"></label><div class="source-block"><h3>Source & credit</h3><label>Creator / source<input name="source_credit" value="${esc(p.source_credit)}"></label><label>Original link<input name="source_url" type="url" value="${esc(p.source_url)}"></label>${p.source_url?`<a href="${esc(p.source_url)}" target="_blank" rel="noopener noreferrer">View original ${icon('external-link')}</a>`:''}<label class="checkbox"><input type="checkbox" name="is_own" ${p.is_own?'checked':''}> My own work</label></div><p class="error" role="alert"></p><button class="primary submit">Save changes</button></form><div class="pin-actions">${image(p)?`<button id="markup-pin">${icon('pencil')} Mark up / annotate${p.annotations?.length?` · ${p.annotations.length}`:''}</button>`:''}<button id="organize-pin">${icon('panels-top-left')} Copy / move to board</button><button id="cover">${icon('image')} Use as board cover</button><button id="delete-pin" class="danger">${icon('trash-2')} Delete reference</button></div></div></div>`,true);
- let zoom=1;const zoomImage=d.querySelector<HTMLImageElement>('.image-scroll img');const pan=bindImagePan(d.querySelector<HTMLElement>('.image-scroll')!,()=>zoom>1);d.addEventListener('close',pan.end,{once:true});let touch:{update():void}|null=null;const setZoom=()=>{pan.update();touch?.update();if(zoomImage){zoomImage.style.width=`${zoom*100}%`;zoomImage.style.maxHeight=zoom===1?'85dvh':'none';d.querySelector('#zoom-fit')!.textContent=zoom===1?'Fit':`${Math.round(zoom*100)}% · Fit`;}};
- const scroller=d.querySelector<HTMLElement>('.image-scroll')!;const zoomTo=(next:number,at:{x:number;y:number}|null)=>{next=Math.min(4,Math.max(1,next));if(next===zoom)return;const from=zoom;zoomAt(scroller,from,next,at,()=>{zoom=next;setZoom();});};
- d.querySelector<HTMLButtonElement>('#zoom-in')!.onclick=()=>zoomTo(zoom+.25,null);d.querySelector<HTMLButtonElement>('#zoom-out')!.onclick=()=>zoomTo(zoom-.25,null);d.querySelector<HTMLButtonElement>('#zoom-fit')!.onclick=()=>zoomTo(1,null);d.querySelector<HTMLButtonElement>('#open-gallery')!.onclick=()=>openGallery(visiblePins,image,p.id);if(zoomImage){// Double-click / double-tap opens the full-screen gallery; pinch zooms in place on touch screens.
- d.querySelector<HTMLElement>('.annotated-image')!.ondblclick=()=>{if(!recentTouchDoubleTap())openGallery(visiblePins,image,p.id);};zoomImage.title='Double-click to expand';touch=bindTouchZoom(scroller,{get:()=>zoom,set:(z,at)=>zoomTo(z,at),doubleTap:()=>openGallery(visiblePins,image,p.id)});}else d.querySelector('.image-controls')!.remove();
- d.querySelector<HTMLFormElement>('form')!.onsubmit=async e=>{e.preventDefault();try{const values=Object.fromEntries(new FormData(e.target as HTMLFormElement));await action({type:'pin.update',id:p.id,payload:{...values,tags:String(values.tags).split(',').map(t=>t.trim()).filter(Boolean),is_own:values.is_own==='on'}});d.close();await refresh();toast('Changes saved');}catch(e){d.querySelector('.error')!.textContent=(e as Error).message;}};
- mountPinFeedback(d,p);
- d.querySelector<HTMLButtonElement>('#back-board')!.onclick=()=>d.close();
- let dirty=false;d.querySelector('#edit-form')!.addEventListener('input',()=>{dirty=true;});
- const step=(delta:number)=>{const next=visiblePins[position+delta];if(next&&(!dirty||confirm('Discard unsaved edits and open the next reference?')))focusPin(next);};
- d.querySelector<HTMLButtonElement>('#quick-save-pin')?.addEventListener('click',()=>run(async()=>{const button=d.querySelector<HTMLButtonElement>('#quick-save-pin')!;button.disabled=true;try{await action({type:'pin.batch',payload:{operation:'copy',ids:[p.id],board_id:d.querySelector<HTMLSelectElement>('#save-board')!.value}});state=await snapshot();toast('Copy saved to board');}finally{button.disabled=false;}}));
- d.querySelector<HTMLButtonElement>('#prev-pin')!.onclick=()=>step(-1);
- d.querySelector<HTMLButtonElement>('#next-pin')!.onclick=()=>step(1);
- d.onkeydown=e=>{if((e.target as HTMLElement).closest('input,textarea,select'))return;if(e.key==='ArrowLeft'||e.key==='ArrowRight'){e.preventDefault();step(e.key==='ArrowLeft'?-1:1);}};
- d.querySelector<HTMLButtonElement>('#jump-comments')!.onclick=()=>{const panel=d.querySelector<HTMLElement>('.pin-feedback')!;panel.scrollIntoView?.({block:'nearest',behavior:'smooth'});panel.querySelector<HTMLTextAreaElement>('textarea')?.focus();};
+function chips(p: Pin) {
+  return `<div class="swatches">${p.palette.map(c => `<button type="button" class="swatch" style="background:${esc(c)}" title="Find ${esc(c)}" aria-label="Find colour ${esc(c)}" data-colour="${esc(c)}"></button>`).join('')}</div>`;
+}
+function card(p: Pin) {
+  const img = image(p),
+    marks = p.annotations?.length || 0;
+  return `<div class="pin-wrap ${selection.has(p.id) ? 'is-selected' : ''}" draggable="true" data-drag-pin="${p.id}">${selecting ? `<button class="select-pin" data-select-pin="${p.id}" aria-label="Select ${esc(p.meta.title || 'reference')}" aria-pressed="${selection.has(p.id)}">${selection.has(p.id) ? '✓' : '○'}</button>` : ''}<button class="pin ${img ? '' : 'text-pin'}" data-pin="${p.id}">${img ? `<img draggable="false" src="${img}" alt="${esc(p.meta.title || p.note || 'Saved inspiration')}" loading="lazy">` : `<div class="idea-content">${icon(p.meta.kind === 'link' ? 'link' : 'quote')}<p>${esc(p.note || p.meta.title || p.source_url)}</p></div>`}<div class="caption"><strong>${starred(p) ? '★ ' : ''}${esc(p.meta.title || (p.meta.kind === 'idea' ? 'A thought to keep' : 'Untitled reference'))}</strong><span>${p.contributor_name ? `<span class="client-stars">Added by ${esc(p.contributor_name)}</span>${p.source_credit ? ' · ' + esc(p.source_credit) : ''}` : esc(p.is_own ? 'My own work' : p.source_credit || 'Credit not added')}${p.source_url ? ' · Source ↗' : ''}${
+    !client && clientStars(p).length
+      ? ` · <span class="client-stars" title="Starred by ${esc(
+          clientStars(p)
+            .map(f => f.author_name)
+            .join(', '),
+        )}">★ ${clientStars(p).length} client${clientStars(p).length === 1 ? '' : 's'}</span>`
+      : ''
+  }${state.feedback.filter(f => f.pin_id === p.id && f.board_id === p.board_id && f.text).length ? ` · ${state.feedback.filter(f => f.pin_id === p.id && f.board_id === p.board_id && f.text).length} comments` : ''}${marks ? ` · ${marks} markup${marks === 1 ? '' : 's'}` : ''}</span></div></button></div>`;
+}
+function render() {
+  // Remember when this board was last opened, so client comments that arrived since are highlighted during this visit.
+  if (view !== visitBoard) {
+    visitBoard = view;
+    visitSince = seenMarks()[view] || '';
+  }
+  if (state.boards.some(b => b.id === view) && !client) markSeen(view);
+  for (const id of selection) if (!state.pins.some(p => p.id === id)) selection.delete(id);
+  const board = boardNow();
+  if (client && !board) client = false;
+  const inbox = state.boards.find(b => b.name === 'Inbox');
+  const title = board?.name || (view === 'boards' ? 'Your boards' : 'All inspiration');
+  let pins = board ? pinsFor(board.id) : state.pins;
+  if (query) {
+    const q = query.toLowerCase();
+    pins = pins.filter(p =>
+      [p.note, p.meta.title, p.source_credit, ...p.tags, ...p.palette, ...p.palette.flatMap(colourWords)]
+        .join(' ')
+        .toLowerCase()
+        .includes(q),
+    );
+  }
+  const picks = board && !client ? pickers(board.id) : [];
+  if (pickClient && !picks.some(c => c.by === pickClient)) pickClient = '';
+  if (filter === 'picks' && !picks.length) filter = 'all';
+  if (filter !== 'all')
+    pins = pins.filter(p =>
+      filter === 'starred'
+        ? starred(p)
+        : filter === 'picks'
+          ? isPick(p)
+          : filter === 'images'
+            ? p.meta.kind === 'image'
+            : p.meta.kind !== 'image',
+    );
+  pins = [...pins].sort(
+    (a, b) =>
+      (filter === 'picks' ? clientStars(b).length - clientStars(a).length : 0) ||
+      b.created_at.localeCompare(a.created_at),
+  );
+  visiblePins = pins;
+  root.innerHTML = `<aside class="sidebar"><a class="brand" href="#">STUDIO<span>WALL</span><b>◧</b></a><div class="workspace-label">YOUR CREATIVE SPACE</div><nav>${[
+    ['all', 'layout-grid', 'All inspiration'],
+    [inbox?.id || '', 'inbox', 'Inbox'],
+    ['boards', 'panels-top-left', 'Boards'],
+  ]
+    .map(
+      ([id, ic, n]) =>
+        `<button data-nav="${id}" class="nav-item ${view === id ? 'active' : ''}">${icon(ic)}${n}${id === inbox?.id ? `<small>${pinsFor(id).length}</small>` : ''}</button>`,
+    )
+    .join(
+      '',
+    )}</nav><div class="section-label">MY BOARDS<button data-action="new-board" aria-label="Create board">${icon('plus')}</button></div><div class="board-nav">${
+    state.boards
+      .filter(b => b.name !== 'Inbox')
+      .map(
+        b =>
+          `<button class="nav-item ${view === b.id ? 'active' : ''}" data-nav="${b.id}">${icon('square')}<span>${esc(b.name)}</span>${newsBadge(b.id)}</button>`,
+      )
+      .join('') || '<p class="hint">Make room for your next idea.</p>'
+  }</div><div class="sidebar-foot"><button data-action="sample">${icon('panels-top-left')} Try collaboration demo</button><button data-action="library">${icon('arrow-left-right')} Back up / move devices</button><button data-action="studio">${icon('user-round')} Studio account</button><button data-action="trash">${icon('trash-2')} Recently deleted</button><button data-action="theme">${icon(theme === 'dark' ? 'sun' : 'moon')} ${theme === 'dark' ? 'Light' : 'Dark'} mode</button><span class="sync-label">${icon('hard-drive')} ${esc(syncLabel())}</span></div></aside>
+ <main><header class="mobile-brand">STUDIO WALL<button data-action="library" data-sync="${syncState()}" title="${esc(syncLabel())}" aria-label="Back up, move devices and sync status">${icon('arrow-left-right')}</button><button data-action="theme" aria-label="Toggle colour theme">${icon(theme === 'dark' ? 'sun' : 'moon')}</button></header>${client ? `<div class="preview-banner">${icon('eye')} Client preview · on this device only<button data-action="exit-preview">Exit preview</button></div>` : ''}<div class="topline"><div><div class="eyebrow">${client ? 'A BOARD TO EXPLORE TOGETHER' : board ? 'COLLECTION' : 'COLLECT. CONNECT. CREATE.'}</div><h1>${esc(title)}<span class="private">${icon('lock')} Private</span></h1><div class="app-history"><button data-action="back" aria-label="Back" title="Back" ${navIndex === 0 ? 'disabled' : ''}>${icon('chevron-left')}</button><button data-action="forward" aria-label="Forward" title="Forward" ${navIndex >= navTrail.length - 1 ? 'disabled' : ''}>${icon('chevron-right')}</button><span></span><button data-action="undo" aria-label="Undo" title="Undo" ${historyStatus().canUndo ? '' : 'disabled'}>${icon('undo-2')}</button><button data-action="redo" aria-label="Redo" title="Redo" ${historyStatus().canRedo ? '' : 'disabled'}>${icon('redo-2')}</button></div></div><div class="header-actions">${board && !client ? `<button class="secondary" data-action="board-menu" aria-label="Board options">${icon('ellipsis')}</button><button class="secondary" data-action="share">${icon('users')}<span>Collaborate</span></button>` : ''}<button class="primary" data-action="save" ${client && board?.share_settings?.permission !== 'contribute' ? 'disabled' : ''}>${icon('plus')} ${client ? 'Add reference' : 'Add'}</button></div></div>
+ ${
+   ['all', 'boards'].includes(view)
+     ? (() => {
+         const news = state.boards.map(b => ({b, n: clientCount(b.id)})).filter(x => x.n);
+         return news.length
+           ? `<div class="client-news-bar">${icon('message-circle')} New from clients:${news.map(x => `<button data-nav="${x.b.id}">${esc(x.b.name)} <b class="client-news">${x.n}</b></button>`).join('')}</div>`
+           : '';
+       })()
+     : ''
+ }${
+   board && !client
+     ? (() => {
+         const gone = clientRemovals(board.id, visitSince);
+         if (!gone.length) return '';
+         const names = [...new Set(gone.map(p => p.contributor_name || 'A client'))];
+         return `<div class="client-news-bar">${icon('trash-2')} ${esc(names.join(', '))} removed ${gone.length === 1 ? `“${esc(gone[0].meta.title || gone[0].note || 'a card')}”` : gone.length + ' cards'} they added.<button data-action="trash">Recently deleted</button></div>`;
+       })()
+     : ''
+ }
+ <p class="intro">${esc(board?.description || (view === 'boards' ? 'Gather references around a project, a palette, or a possibility.' : 'Images, materials, and ideas worth coming back to.'))}</p>
+ ${
+   view === 'boards'
+     ? `<div class="board-grid">${state.boards
+         .map(b => {
+           const ps = pinsFor(b.id);
+           const cover = ps.find(p => p.id === b.cover_pin_id) || ps.find(p => image(p));
+           return `<article class="board-card"><button data-nav="${b.id}"><div class="board-cover">${cover && image(cover) ? `<img src="${image(cover)}" alt="${esc(b.name)}">` : `${icon('panels-top-left')}<span>${esc(b.name)}</span>`}</div><h3>${esc(b.name)}${newsBadge(b.id)}</h3><p>${ps.length} reference${ps.length === 1 ? '' : 's'}</p></button><div class="board-order"><button data-up="${b.id}" aria-label="Move ${esc(b.name)} earlier">${icon('arrow-left')}</button></div></article>`;
+         })
+         .join('')}<button class="new-board-card" data-action="new-board">${icon('plus')}Create a board</button></div>`
+     : `<div class="toolbar"><label class="search">${icon('search')}<input id="search" value="${esc(query)}" placeholder="Search notes, tags or colours (e.g. blue, warm)" aria-label="Search inspiration"><kbd>/</kbd></label><div class="filters">${[['all', 'All'], ['images', 'Images'], ['ideas', 'Ideas & links'], ['starred', '★ Starred'], ...(picks.length ? [['picks', 'Client picks']] : [])].map(([id, n]) => `<button data-filter="${id}" class="${filter === id ? 'chosen' : ''}">${n}</button>`).join('')}</div><button class="secondary" data-action="present">Present / PDF</button><button class="secondary selection-toggle" data-action="select">${selecting ? 'Done' : 'Select'}</button><span class="count">${pins.length} reference${pins.length === 1 ? '' : 's'}</span></div>${filter === 'picks' ? `<div class="pick-clients" role="group" aria-label="Choose a client"><span>Starred by</span><button data-pick-client="" class="${pickClient ? '' : 'chosen'}">All clients</button>${picks.map(c => `<button data-pick-client="${esc(c.by)}" class="${pickClient === c.by ? 'chosen' : ''}">${esc(c.name)} <b>${c.n}</b></button>`).join('')}</div>` : ''}${selecting || selection.size ? `<div class="selection-bar"><strong>${selection.size} selected</strong><button data-action="select-all">Select visible</button><button data-action="clear-selection">Clear</button>${boardNow() && !client ? `<button data-action="share-selected" ${selection.size ? '' : 'disabled'}>Share selected</button>` : ''}<button class="primary" data-action="transfer" ${selection.size ? '' : 'disabled'}>Copy / move to board</button></div>` : ''}<p class="selection-hint">Drag a selection box from empty space around images, then drag the group onto a board · Shift / ⌘ / Ctrl to add</p>${pins.length ? `<div class="masonry">${pins.map(card).join('')}</div>` : `<div class="empty"><div class="empty-icon">${icon(query ? 'search' : 'image-plus')}</div><h2>${query ? 'Nothing here yet.' : 'A little space for your next big idea.'}</h2><p>${query ? 'Try another note, tag, or palette hex colour.' : 'Drop an image here, save a link, or jot down a thought. Your collection starts with one reference.'}</p>${!query ? '<button class="primary" data-action="save">Save your first reference</button><button class="text-button" data-action="sample">Try a sample board</button>' : ''}</div>`}`
+ }
+ ${
+   board
+     ? `<section class="feedback"><div><div class="eyebrow">THE CONVERSATION</div><h2>Thoughts & direction</h2><p>Your notes and your clients’ comments from share links, together. With sync on they reach all your devices.</p></div><div>${state.feedback
+         .filter(f => f.board_id === board.id && f.text)
+         .map(
+           f =>
+             `<article class="${f.author_name && f.updated_at > visitSince ? 'is-new' : ''}"><strong>${esc(author(f))} <small>${f.author_name ? 'Client link' : 'This device'}${f.pin_id ? ' · ' + esc(state.pins.find(p => p.id === f.pin_id)?.meta.title || 'Reference') : ''}</small></strong><p>${esc(f.text)}</p></article>`,
+         )
+         .join(
+           '',
+         )}<form id="feedback-form" ${client && !commentsAllowed(board.id) ? 'hidden' : ''}><label for="feedback-text">Add a thought</label><textarea id="feedback-text" required maxlength="4000" placeholder="What speaks to you about this direction?"></textarea><button class="primary">Add comment</button></form></div></section>`
+     : ''
+ }<footer class="page-foot">Your inspiration, in one place.<span>Private · only you and the clients you share links with</span><span class="build-stamp" title="Version uses UTC; build time shown in Eastern Time"><strong>${buildVersion}</strong> · built <time datetime="${__BUILD_TIME__}">${buildLabel} ET</time></span></footer></main><nav class="mobile-nav"><button data-nav="all" class="${view === 'all' ? 'active' : ''}">${icon('layout-grid')}Inspiration</button><button data-nav="boards" class="${view === 'boards' ? 'active' : ''}">${icon('panels-top-left')}Boards</button><button class="mobile-save" data-action="save">${icon('plus')}Save</button></nav><input id="zip-input" type="file" accept=".zip" hidden><dialog id="modal"></dialog>`;
+  bind();
+  createIcons({icons});
+}
+function show(content: string, wide = false) {
+  const d = document.querySelector<HTMLDialogElement>('#modal')!;
+  d.className = wide ? 'wide' : '';
+  d.innerHTML = `<button class="close" aria-label="Close">${icon('x')}</button>${content}`;
+  d.querySelector('.close')!.addEventListener('click', () => d.close());
+  d.onclick = e => {
+    if (e.target === d) d.close();
+  };
+  d.showModal();
+  createIcons({icons});
+  return d;
+}
+function options(id?: string) {
+  return state.boards
+    .map(b => `<option value="${b.id}" ${id === b.id ? 'selected' : ''}>${esc(b.name)}</option>`)
+    .join('');
+}
+function quickAddDialog() {
+  const d = show(
+    `<div class="dialog-heading"><div class="eyebrow">ADD TO THIS BOARD</div><h2>What are you adding?</h2><p>Keep it fast — an image, a standalone note, or a useful link.</p></div><div class="quick-add"><button data-kind="image">${icon('image-plus')}<strong>Image / photo</strong><span>Upload, camera, drag or paste</span></button><button data-kind="idea">${icon('sticky-note')}<strong>Note / idea</strong><span>Add a thought directly to the board</span></button><button data-kind="link">${icon('link')}<strong>Link</strong><span>Save a URL with an optional note</span></button></div>`,
+  );
+  d.querySelectorAll<HTMLButtonElement>('[data-kind]').forEach(
+    b =>
+      (b.onclick = () => {
+        const kind = b.dataset.kind as 'image' | 'idea' | 'link';
+        d.close();
+        saveDialog(undefined, kind);
+      }),
+  );
+}
+function saveDialog(files?: File[], mode: 'image' | 'idea' | 'link' = 'image') {
+  picked = files?.[0];
+  if (files?.length) mode = 'image';
+  const title =
+    mode === 'idea'
+      ? 'Add a note or idea'
+      : mode === 'link'
+        ? 'Save a link'
+        : client
+          ? 'Add a reference'
+          : 'Add images';
+  const imageFields =
+    mode === 'image'
+      ? `<label class="upload-zone" for="upload">${icon('image-plus')}<strong id="picked-name">${esc(picked?.name || 'Choose images or drop them here')}</strong><span>JPEG, PNG, WebP, HEIC, AVIF, GIF, TIFF · optimized to WebP, max 2400px</span></label><input id="upload" type="file" accept="${IMAGE_ACCEPT}" multiple hidden><label class="camera-button">${icon('camera')} Take a photo<input id="camera" type="file" accept="image/*" capture="environment" hidden></label>`
+      : '';
+  const linkField =
+    mode === 'link'
+      ? '<label>Link<input name="source_url" type="url" required placeholder="https://…"></label>'
+      : mode === 'image'
+        ? '<label>Original link <span>optional</span><input name="source_url" type="url" placeholder="https://…"></label>'
+        : '';
+  const noteLabel = mode === 'idea' ? 'Note / idea' : 'Note';
+  const d = show(
+    `<div class="dialog-heading"><div class="eyebrow">KEEP SOMETHING GOOD</div><h2>${title}</h2><p>${mode === 'idea' ? 'This becomes its own card in the board — no image required.' : mode === 'link' ? 'Save a reference now and come back to it later.' : 'Add one image or a batch.'}</p></div><form id="save-form">${imageFields}<div class="form-row"><label>Title <span>optional</span><input name="title" placeholder="${mode === 'idea' ? 'Short heading' : 'What caught your eye?'}"></label><label>Board<select name="board_id">${options(boardNow()?.id || state.boards.find(b => b.name === 'Inbox')?.id)}</select></label></div>${linkField}<label>${noteLabel}<textarea name="note" rows="4" ${mode === 'idea' ? 'required' : ''} placeholder="${mode === 'idea' ? 'Write the thought you want to keep on this board…' : 'A color, texture, direction, or context…'}"></textarea></label><div class="form-row"><label>Source / creator credit<input name="source_credit" placeholder="Who made or shared it?"></label><label>Tags<input name="tags" placeholder="plaster, warm tones, sculpture"></label></div><label class="checkbox"><input type="checkbox" name="is_own"> This is my own work / note</label><p class="form-help">Notes and links live in the board just like images and can be moved, copied, searched, selected, or shared later.</p><p class="error" role="alert"></p><button class="primary submit">${icon('plus')} Add to board</button></form>`,
+  );
+  let batch = files || [];
+  for (const id of ['upload', 'camera'])
+    d.querySelector<HTMLInputElement>('#' + id)?.addEventListener('change', e => {
+      batch = Array.from((e.target as HTMLInputElement).files || []);
+      d.querySelector('#picked-name')!.textContent =
+        batch.length > 1 ? `${batch.length} images selected` : batch[0]?.name || 'Choose images';
+    });
+  d.querySelector<HTMLFormElement>('form')!.onsubmit = async e => {
+    e.preventDefault();
+    const form = e.target as HTMLFormElement,
+      submit = form.querySelector<HTMLButtonElement>('.submit')!;
+    submit.disabled = true;
+    try {
+      const values = Object.fromEntries(new FormData(form));
+      const payload = {
+        ...values,
+        is_own: values.is_own === 'on',
+        tags: String(values.tags || '')
+          .split(',')
+          .map(t => t.trim())
+          .filter(Boolean),
+      }; // Prepare every image first, then save them in one step, so a failure part-way leaves nothing half-added.
+      const items: any[] = [],
+        blobs: Record<string, Blob> = {};
+      const sources = batch.length ? batch : [undefined];
+      for (const [i, source] of sources.entries()) {
+        if (source && source.size > 50 * 1024 * 1024) throw Error('Please use images smaller than 50 MB.');
+        if (sources.length > 1) submit.textContent = `Preparing ${i + 1} of ${sources.length}…`;
+        const blob = source ? await optimizeImage(source) : undefined;
+        if (blob) blobs[String(i)] = blob;
+        items.push({...payload, palette: blob ? await palette(blob) : []});
+      }
+      await action({type: 'pin.save_batch', payload: {items}, blobs});
+      navigate(String(values.board_id), true, false);
+      d.close();
+      await refresh();
+      toast(mode === 'idea' ? 'Note added to board' : mode === 'link' ? 'Link added to board' : 'Saved to your board');
+    } catch (e) {
+      d.querySelector('.error')!.textContent = (e as Error).message;
+    } finally {
+      submit.disabled = false;
+      submit.innerHTML = `${icon('plus')} Add to board`;
+      createIcons({icons});
+    }
+  };
+}
+function focusPin(p: Pin) {
+  selected = p;
+  const position = visiblePins.findIndex(x => x.id === p.id);
+  const d = show(
+    `<nav class="focus-toolbar" aria-label="Reference navigation"><button id="back-board">${icon('arrow-left')} Back to board</button><div><button id="prev-pin" aria-label="Previous reference" ${position <= 0 ? 'disabled' : ''}>${icon('chevron-left')}</button><span>${position + 1} / ${visiblePins.length}</span><button id="next-pin" aria-label="Next reference" ${position >= visiblePins.length - 1 ? 'disabled' : ''}>${icon('chevron-right')}</button></div><button id="jump-comments">${icon('message-circle')} Comments</button>${!client ? `<div class="quick-board-save"><select id="save-board" aria-label="Save a copy to board">${options(p.board_id)}</select><button id="quick-save-pin" class="primary">Save a copy</button></div>` : ''}</nav><div class="focus-layout"><div class="focus-image"><div class="image-controls"><button id="zoom-out" aria-label="Zoom out">−</button><button id="zoom-fit">Fit</button><button id="zoom-in" aria-label="Zoom in">+</button><button id="open-gallery">Expand gallery</button></div><div class="image-scroll">${image(p) ? `<div class="annotated-image"><img src="${image(p)}" alt="${esc(p.meta.title || 'Saved reference')}">${annotationOverlay(p.annotations || [])}</div>` : `<blockquote>${esc(p.note || p.source_url)}</blockquote>`}</div></div><div class="inspector"><div class="eyebrow">SAVED INSPIRATION</div><h2>${esc(p.meta.title || 'A reference to return to')}</h2>${chips(p)}<form id="edit-form"><label>Title<input name="title" value="${esc(p.meta.title)}"></label><label>Board<select name="board_id">${options(p.board_id)}</select></label><label>Notes<textarea name="note" rows="4">${esc(p.note)}</textarea></label><label>Tags<input name="tags" value="${esc(p.tags.join(', '))}"></label><div class="source-block"><h3>Source & credit</h3><label>Creator / source<input name="source_credit" value="${esc(p.source_credit)}"></label><label>Original link<input name="source_url" type="url" value="${esc(p.source_url)}"></label>${p.source_url ? `<a href="${esc(p.source_url)}" target="_blank" rel="noopener noreferrer">View original ${icon('external-link')}</a>` : ''}<label class="checkbox"><input type="checkbox" name="is_own" ${p.is_own ? 'checked' : ''}> My own work</label></div><p class="error" role="alert"></p><button class="primary submit">Save changes</button></form><div class="pin-actions">${image(p) ? `<button id="markup-pin">${icon('pencil')} Mark up / annotate${p.annotations?.length ? ` · ${p.annotations.length}` : ''}</button>` : ''}<button id="organize-pin">${icon('panels-top-left')} Copy / move to board</button><button id="cover">${icon('image')} Use as board cover</button><button id="delete-pin" class="danger">${icon('trash-2')} Delete reference</button></div></div></div>`,
+    true,
+  );
+  let zoom = 1;
+  const zoomImage = d.querySelector<HTMLImageElement>('.image-scroll img');
+  const pan = bindImagePan(d.querySelector<HTMLElement>('.image-scroll')!, () => zoom > 1);
+  d.addEventListener('close', pan.end, {once: true});
+  let touch: {update(): void} | null = null;
+  const setZoom = () => {
+    pan.update();
+    touch?.update();
+    if (zoomImage) {
+      zoomImage.style.width = `${zoom * 100}%`;
+      zoomImage.style.maxHeight = zoom === 1 ? '85dvh' : 'none';
+      d.querySelector('#zoom-fit')!.textContent = zoom === 1 ? 'Fit' : `${Math.round(zoom * 100)}% · Fit`;
+    }
+  };
+  const scroller = d.querySelector<HTMLElement>('.image-scroll')!;
+  const zoomTo = (next: number, at: {x: number; y: number} | null) => {
+    next = Math.min(4, Math.max(1, next));
+    if (next === zoom) return;
+    const from = zoom;
+    zoomAt(scroller, from, next, at, () => {
+      zoom = next;
+      setZoom();
+    });
+  };
+  d.querySelector<HTMLButtonElement>('#zoom-in')!.onclick = () => zoomTo(zoom + 0.25, null);
+  d.querySelector<HTMLButtonElement>('#zoom-out')!.onclick = () => zoomTo(zoom - 0.25, null);
+  d.querySelector<HTMLButtonElement>('#zoom-fit')!.onclick = () => zoomTo(1, null);
+  d.querySelector<HTMLButtonElement>('#open-gallery')!.onclick = () => openGallery(visiblePins, image, p.id);
+  if (zoomImage) {
+    // Double-click / double-tap opens the full-screen gallery; pinch zooms in place on touch screens.
+    d.querySelector<HTMLElement>('.annotated-image')!.ondblclick = () => {
+      if (!recentTouchDoubleTap()) openGallery(visiblePins, image, p.id);
+    };
+    zoomImage.title = 'Double-click to expand';
+    touch = bindTouchZoom(scroller, {
+      get: () => zoom,
+      set: (z, at) => zoomTo(z, at),
+      doubleTap: () => openGallery(visiblePins, image, p.id),
+    });
+  } else d.querySelector('.image-controls')!.remove();
+  d.querySelector<HTMLFormElement>('form')!.onsubmit = async e => {
+    e.preventDefault();
+    try {
+      const values = Object.fromEntries(new FormData(e.target as HTMLFormElement));
+      await action({
+        type: 'pin.update',
+        id: p.id,
+        payload: {
+          ...values,
+          tags: String(values.tags)
+            .split(',')
+            .map(t => t.trim())
+            .filter(Boolean),
+          is_own: values.is_own === 'on',
+        },
+      });
+      d.close();
+      await refresh();
+      toast('Changes saved');
+    } catch (e) {
+      d.querySelector('.error')!.textContent = (e as Error).message;
+    }
+  };
+  mountPinFeedback(d, p);
+  d.querySelector<HTMLButtonElement>('#back-board')!.onclick = () => d.close();
+  let dirty = false;
+  d.querySelector('#edit-form')!.addEventListener('input', () => {
+    dirty = true;
+  });
+  const step = (delta: number) => {
+    const next = visiblePins[position + delta];
+    if (next && (!dirty || confirm('Discard unsaved edits and open the next reference?'))) focusPin(next);
+  };
+  d.querySelector<HTMLButtonElement>('#quick-save-pin')?.addEventListener('click', () =>
+    run(async () => {
+      const button = d.querySelector<HTMLButtonElement>('#quick-save-pin')!;
+      button.disabled = true;
+      try {
+        await action({
+          type: 'pin.batch',
+          payload: {operation: 'copy', ids: [p.id], board_id: d.querySelector<HTMLSelectElement>('#save-board')!.value},
+        });
+        state = await snapshot();
+        toast('Copy saved to board');
+      } finally {
+        button.disabled = false;
+      }
+    }),
+  );
+  d.querySelector<HTMLButtonElement>('#prev-pin')!.onclick = () => step(-1);
+  d.querySelector<HTMLButtonElement>('#next-pin')!.onclick = () => step(1);
+  d.onkeydown = e => {
+    if ((e.target as HTMLElement).closest('input,textarea,select')) return;
+    if (e.key === 'ArrowLeft' || e.key === 'ArrowRight') {
+      e.preventDefault();
+      step(e.key === 'ArrowLeft' ? -1 : 1);
+    }
+  };
+  d.querySelector<HTMLButtonElement>('#jump-comments')!.onclick = () => {
+    const panel = d.querySelector<HTMLElement>('.pin-feedback')!;
+    panel.scrollIntoView?.({block: 'nearest', behavior: 'smooth'});
+    panel.querySelector<HTMLTextAreaElement>('textarea')?.focus();
+  };
 
- if(client){d.querySelector('#edit-form')!.setAttribute('hidden','');d.querySelector('.pin-actions')!.setAttribute('hidden','');}
- d.querySelector('#markup-pin')?.addEventListener('click',()=>{const src=image(p);if(!src)return;openMarkup(src,p.annotations||[],async annotations=>{const updated=await action({type:'pin.update',id:p.id,payload:{annotations}});p.annotations=updated.annotations;const index=state.pins.findIndex(x=>x.id===p.id);if(index>=0)state.pins[index]=updated;});});
- d.querySelector('#organize-pin')!.addEventListener('click',()=>{d.close();transferDialog([p.id]);});
- d.querySelector('#cover')!.addEventListener('click',()=>run(async()=>{await action({type:'board.update',id:p.board_id,payload:{cover_pin_id:p.id}});toast('Board cover updated');}));d.querySelector('#delete-pin')!.addEventListener('click',()=>run(async()=>{if(confirm('Delete this reference? It will be soft-deleted from this device.')){await action({type:'pin.delete',id:p.id});d.close();await refresh();}}));
- d.querySelectorAll<HTMLButtonElement>('[data-colour]').forEach(b=>b.onclick=()=>{query=b.dataset.colour!;navigate('all');d.close();render();});
+  if (client) {
+    d.querySelector('#edit-form')!.setAttribute('hidden', '');
+    d.querySelector('.pin-actions')!.setAttribute('hidden', '');
+  }
+  d.querySelector('#markup-pin')?.addEventListener('click', () => {
+    const src = image(p);
+    if (!src) return;
+    openMarkup(src, p.annotations || [], async annotations => {
+      const updated = await action({type: 'pin.update', id: p.id, payload: {annotations}});
+      p.annotations = updated.annotations;
+      const index = state.pins.findIndex(x => x.id === p.id);
+      if (index >= 0) state.pins[index] = updated;
+    });
+  });
+  d.querySelector('#organize-pin')!.addEventListener('click', () => {
+    d.close();
+    transferDialog([p.id]);
+  });
+  d.querySelector('#cover')!.addEventListener('click', () =>
+    run(async () => {
+      await action({type: 'board.update', id: p.board_id, payload: {cover_pin_id: p.id}});
+      toast('Board cover updated');
+    }),
+  );
+  d.querySelector('#delete-pin')!.addEventListener('click', () =>
+    run(async () => {
+      if (confirm('Delete this reference? It will be soft-deleted from this device.')) {
+        await action({type: 'pin.delete', id: p.id});
+        d.close();
+        await refresh();
+      }
+    }),
+  );
+  d.querySelectorAll<HTMLButtonElement>('[data-colour]').forEach(
+    b =>
+      (b.onclick = () => {
+        query = b.dataset.colour!;
+        navigate('all');
+        d.close();
+        render();
+      }),
+  );
 }
-function mountPinFeedback(d:HTMLDialogElement,p:Pin){
- const panel=document.createElement('section');panel.className='pin-feedback';d.querySelector('.inspector')!.insertBefore(panel,d.querySelector('#edit-form'));
- const draw=()=>{const canComment=!client||commentsAllowed(p.board_id);panel.innerHTML=`<h3>Comments</h3>${!client&&clientStars(p).length?`<p class="client-starred">★ Starred by ${esc(clientStars(p).map(f=>f.author_name).join(', '))}</p>`:''}<button id="star-pin" class="secondary" aria-pressed="${starred(p)}" ${canComment?'':'disabled'}>${starred(p)?'★ Starred':'☆ Star this piece'}</button>${state.feedback.filter(f=>f.board_id===p.board_id&&f.pin_id===p.id&&f.text).map(f=>`<article><strong>${esc(author(f))} · ${f.author_name?'client link':'this device'}</strong><p>${esc(f.text)}</p></article>`).join('')}<form id="pin-comment" ${canComment?'':'hidden'}><label>Add a comment<textarea name="text" required maxlength="4000" placeholder="What do you like about this piece?"></textarea></label><button class="primary">Post comment</button></form>${canComment?'':'<p class="form-help">Comments are turned off for this board.</p>'}`;
- panel.querySelector<HTMLButtonElement>('#star-pin')!.onclick=()=>run(async()=>{await action({type:'feedback.star',payload:{board_id:p.board_id,pin_id:p.id}});state=await snapshot();draw();});panel.querySelector<HTMLFormElement>('form')!.onsubmit=e=>{e.preventDefault();run(async()=>{const text=panel.querySelector<HTMLTextAreaElement>('textarea')!.value;await action({type:'feedback.add',payload:{board_id:p.board_id,pin_id:p.id,text,client_preview:client}});state=await snapshot();draw();});};};draw();d.addEventListener('close',()=>{if(!d.open)render();},{once:true});
+function mountPinFeedback(d: HTMLDialogElement, p: Pin) {
+  const panel = document.createElement('section');
+  panel.className = 'pin-feedback';
+  d.querySelector('.inspector')!.insertBefore(panel, d.querySelector('#edit-form'));
+  const draw = () => {
+    const canComment = !client || commentsAllowed(p.board_id);
+    panel.innerHTML = `<h3>Comments</h3>${
+      !client && clientStars(p).length
+        ? `<p class="client-starred">★ Starred by ${esc(
+            clientStars(p)
+              .map(f => f.author_name)
+              .join(', '),
+          )}</p>`
+        : ''
+    }<button id="star-pin" class="secondary" aria-pressed="${starred(p)}" ${canComment ? '' : 'disabled'}>${starred(p) ? '★ Starred' : '☆ Star this piece'}</button>${state.feedback
+      .filter(f => f.board_id === p.board_id && f.pin_id === p.id && f.text)
+      .map(
+        f =>
+          `<article><strong>${esc(author(f))} · ${f.author_name ? 'client link' : 'this device'}</strong><p>${esc(f.text)}</p></article>`,
+      )
+      .join(
+        '',
+      )}<form id="pin-comment" ${canComment ? '' : 'hidden'}><label>Add a comment<textarea name="text" required maxlength="4000" placeholder="What do you like about this piece?"></textarea></label><button class="primary">Post comment</button></form>${canComment ? '' : '<p class="form-help">Comments are turned off for this board.</p>'}`;
+    panel.querySelector<HTMLButtonElement>('#star-pin')!.onclick = () =>
+      run(async () => {
+        await action({type: 'feedback.star', payload: {board_id: p.board_id, pin_id: p.id}});
+        state = await snapshot();
+        draw();
+      });
+    panel.querySelector<HTMLFormElement>('form')!.onsubmit = e => {
+      e.preventDefault();
+      run(async () => {
+        const text = panel.querySelector<HTMLTextAreaElement>('textarea')!.value;
+        await action({
+          type: 'feedback.add',
+          payload: {board_id: p.board_id, pin_id: p.id, text, client_preview: client},
+        });
+        state = await snapshot();
+        draw();
+      });
+    };
+  };
+  draw();
+  d.addEventListener(
+    'close',
+    () => {
+      if (!d.open) render();
+    },
+    {once: true},
+  );
 }
-function boardDialog(board?:Board){const d=show(`<div class="dialog-heading"><div class="eyebrow">A PLACE FOR YOUR IDEAS</div><h2>${board?'Edit board':'Create a board'}</h2></div><form><label>Name<input name="name" required maxlength="100" value="${esc(board?.name)}" placeholder="e.g. A quieter kind of blue"></label><label>Description<textarea name="description" placeholder="What are we exploring?">${esc(board?.description)}</textarea></label><p class="error" role="alert"></p><button class="primary submit">${board?'Save changes':'Create board'}</button></form>${board?'<div class="pin-actions"><button id="export-board">Export board ZIP</button><button class="danger" id="delete-board">Delete board</button></div>':''}`);d.querySelector<HTMLFormElement>('form')!.onsubmit=async e=>{e.preventDefault();try{const b=await action({type:board?'board.update':'board.create',id:board?.id,payload:Object.fromEntries(new FormData(e.target as HTMLFormElement))});view=b.id;d.close();await refresh();}catch(e){d.querySelector('.error')!.textContent=(e as Error).message;}};if(board){d.querySelector('#export-board')!.addEventListener('click',()=>run(()=>exportBoard(board)));d.querySelector('#delete-board')!.addEventListener('click',()=>run(async()=>{if(confirm('Delete this board and its references from this device?')){await action({type:'board.delete',id:board.id});view='all';d.close();await refresh();}}));}}
-function shareDialog(only:string[]=[]){const board=boardNow()!;const n=only.length,cards=`${n} card${n===1?'':'s'}`;const settings=board.share_settings||{mode:'private',permission:'comment'};const online=!studioSyncOn()&&syncStatus().state!=='off';
- const d=show(`<div class="dialog-heading"><div class="eyebrow">SHARE WITH A CLIENT</div><h2>${n?`Send ${cards} from “${esc(board.name)}”`:`Send “${esc(board.name)}”`}</h2><p>${n?`This link opens only the ${cards} you selected: their images, titles and credits. The rest of the board, your image notes, tags and other boards stay private.`:'A client link opens this board only: its images, titles and credits. Your image notes, tags and other boards stay private.'} Links can expire, and you can turn one off at any time.</p></div>
- ${online?`<form id="new-link"><div class="form-row"><label>Client can<select name="permission"><option value="comment">View, star and comment</option><option value="contribute">View, comment and add cards</option><option value="view">View only</option></select></label><label>Link expires<select name="expires"><option value="30">In 30 days</option><option value="7">In 7 days</option><option value="90">In 90 days</option><option value="0">Never</option></select></label></div><label>Password<input name="password" type="text" autocomplete="off" autocapitalize="off" spellcheck="false" minlength="8" maxlength="200" placeholder="Optional · at least 8 characters"></label><p class="form-help">Clients type it once on each device. Send it separately from the link (say, by text). It can’t be shown again.</p><p class="error" role="alert"></p><button class="primary">${icon('link')} ${n?`Create link for ${cards}`:'Create client link'}</button></form><div id="link-list" class="link-list"><p class="hint">Loading links…</p></div>`:studioSyncOn()?`<p class="notice">Client links still run on old sync, and this device uses studio sync. To make or change links here, switch back to old sync in Studio account (they move to the studio in a later stage).</p>`:`<p class="notice">Client links need sync. Open Studio Wall at its web address and sign in; once the footer says “Synced online”, you can create links here.</p>`}
- <label class="checkbox"><input type="checkbox" name="comments_enabled" ${board.comments_enabled!==false?'checked':''}> Allow client comments, stars and added cards on this board</label><p class="form-help">Turning this off makes every link view only. Existing feedback and cards are kept.</p>
+function boardDialog(board?: Board) {
+  const d = show(
+    `<div class="dialog-heading"><div class="eyebrow">A PLACE FOR YOUR IDEAS</div><h2>${board ? 'Edit board' : 'Create a board'}</h2></div><form><label>Name<input name="name" required maxlength="100" value="${esc(board?.name)}" placeholder="e.g. A quieter kind of blue"></label><label>Description<textarea name="description" placeholder="What are we exploring?">${esc(board?.description)}</textarea></label><p class="error" role="alert"></p><button class="primary submit">${board ? 'Save changes' : 'Create board'}</button></form>${board ? '<div class="pin-actions"><button id="export-board">Export board ZIP</button><button class="danger" id="delete-board">Delete board</button></div>' : ''}`,
+  );
+  d.querySelector<HTMLFormElement>('form')!.onsubmit = async e => {
+    e.preventDefault();
+    try {
+      const b = await action({
+        type: board ? 'board.update' : 'board.create',
+        id: board?.id,
+        payload: Object.fromEntries(new FormData(e.target as HTMLFormElement)),
+      });
+      view = b.id;
+      d.close();
+      await refresh();
+    } catch (e) {
+      d.querySelector('.error')!.textContent = (e as Error).message;
+    }
+  };
+  if (board) {
+    d.querySelector('#export-board')!.addEventListener('click', () => run(() => exportBoard(board)));
+    d.querySelector('#delete-board')!.addEventListener('click', () =>
+      run(async () => {
+        if (confirm('Delete this board and its references from this device?')) {
+          await action({type: 'board.delete', id: board.id});
+          view = 'all';
+          d.close();
+          await refresh();
+        }
+      }),
+    );
+  }
+}
+function shareDialog(only: string[] = []) {
+  const board = boardNow()!;
+  const n = only.length,
+    cards = `${n} card${n === 1 ? '' : 's'}`;
+  const settings = board.share_settings || {mode: 'private', permission: 'comment'};
+  const online = !studioSyncOn() && syncStatus().state !== 'off';
+  const d =
+    show(`<div class="dialog-heading"><div class="eyebrow">SHARE WITH A CLIENT</div><h2>${n ? `Send ${cards} from “${esc(board.name)}”` : `Send “${esc(board.name)}”`}</h2><p>${n ? `This link opens only the ${cards} you selected: their images, titles and credits. The rest of the board, your image notes, tags and other boards stay private.` : 'A client link opens this board only: its images, titles and credits. Your image notes, tags and other boards stay private.'} Links can expire, and you can turn one off at any time.</p></div>
+ ${online ? `<form id="new-link"><div class="form-row"><label>Client can<select name="permission"><option value="comment">View, star and comment</option><option value="contribute">View, comment and add cards</option><option value="view">View only</option></select></label><label>Link expires<select name="expires"><option value="30">In 30 days</option><option value="7">In 7 days</option><option value="90">In 90 days</option><option value="0">Never</option></select></label></div><label>Password<input name="password" type="text" autocomplete="off" autocapitalize="off" spellcheck="false" minlength="8" maxlength="200" placeholder="Optional · at least 8 characters"></label><p class="form-help">Clients type it once on each device. Send it separately from the link (say, by text). It can’t be shown again.</p><p class="error" role="alert"></p><button class="primary">${icon('link')} ${n ? `Create link for ${cards}` : 'Create client link'}</button></form><div id="link-list" class="link-list"><p class="hint">Loading links…</p></div>` : studioSyncOn() ? `<p class="notice">Client links still run on old sync, and this device uses studio sync. To make or change links here, switch back to old sync in Studio account (they move to the studio in a later stage).</p>` : `<p class="notice">Client links need sync. Open Studio Wall at its web address and sign in; once the footer says “Synced online”, you can create links here.</p>`}
+ <label class="checkbox"><input type="checkbox" name="comments_enabled" ${board.comments_enabled !== false ? 'checked' : ''}> Allow client comments, stars and added cards on this board</label><p class="form-help">Turning this off makes every link view only. Existing feedback and cards are kept.</p>
  <details class="local-preview"><summary>Preview the client view on this device</summary><form id="share-settings"><label>Preview as a client who can<select name="permission"><option value="view">View references</option><option value="comment">View and comment</option><option value="contribute">View, comment and add references</option></select></label><p class="form-help">This preview is only on this device. For a real client, create a link above.</p><button class="secondary" id="client-preview" type="button">Open client preview</button></form></details>`);
- const permission=d.querySelector<HTMLSelectElement>('#share-settings [name=permission]')!;permission.value=settings.permission;
- const comments=d.querySelector<HTMLInputElement>('[name=comments_enabled]')!;
- comments.onchange=()=>run(async()=>{await action({type:'board.update',id:board.id,payload:{comments_enabled:comments.checked}});toast(comments.checked?'Client comments on':'Links are now view only');});
- d.querySelector('#client-preview')!.addEventListener('click',()=>run(async()=>{await action({type:'board.share_settings',id:board.id,payload:{mode:settings.mode,permission:permission.value}});await action({type:'board.update',id:board.id,payload:{comments_enabled:comments.checked}});d.close();await refresh();client=true;render();}));
- if(!online)return;
- const list=d.querySelector<HTMLElement>('#link-list')!;
- const when=(iso:string|null)=>iso?new Date(iso).toLocaleDateString(undefined,{month:'short',day:'numeric',year:'numeric'}):'never';
- const share=async(url:string)=>{try{if(navigator.share&&matchMedia('(pointer:coarse)').matches){await navigator.share({title:board.name,url});return;}}catch(e){if((e as Error).name==='AbortError')return;}try{await navigator.clipboard.writeText(url);toast('Link copied');}catch{prompt('Copy this link',url);}};
- const draw=async()=>{try{const links=(await listShares()).filter(x=>x.board_id===board.id);
-  list.innerHTML=links.length?links.map(x=>`<div class="link-row"><div><strong>${x.permission==='contribute'?'View, comment and add cards':x.permission==='comment'?'View, star and comment':'View only'}</strong><span>${x.pin_count?`${x.pin_count} selected card${x.pin_count===1?'':'s'} · `:''}${x.locked?'Password · ':''}Created ${when(x.created_at)} · expires ${when(x.expires_at)}</span></div><button data-copy="${x.token}">${icon('link')} ${'share' in navigator&&matchMedia('(pointer:coarse)').matches?'Share':'Copy'}</button><button class="danger" data-revoke="${x.token}">Turn off</button></div>`).join(''):'<p class="hint">No active links for this board.</p>';createIcons({icons});
-  list.querySelectorAll<HTMLButtonElement>('[data-copy]').forEach(b=>b.onclick=()=>share(shareUrl(b.dataset.copy!)));
-  list.querySelectorAll<HTMLButtonElement>('[data-revoke]').forEach(b=>b.onclick=()=>run(async()=>{if(!confirm('Turn off this link? Anyone using it will lose access.'))return;await revokeShare(b.dataset.revoke!);toast('Link turned off');await draw();}));
- }catch(e){list.innerHTML=`<p class="error">${esc((e as Error).message)}</p>`;}};
- d.querySelector<HTMLFormElement>('#new-link')!.onsubmit=async e=>{e.preventDefault();const f=e.target as HTMLFormElement,btn=f.querySelector('button')!;btn.disabled=true;
-  try{await syncNow(remoteChanged);const v=Object.fromEntries(new FormData(f));const x=await createShare(board.id,v.permission as Permission,Number(v.expires),String(v.password||''),only);f.reset();await draw();await share(shareUrl(x.token));}
-  catch(err){f.querySelector('.error')!.textContent=(err as Error).message;}finally{btn.disabled=false;}};
- draw();}
-// Studio sync (src/studio.ts, loaded only when signed in) replaces old sync on a device that switched to it.
-let studioText='Studio · starting…',studioState:'off'|'syncing'|'on'|'error'='syncing';
-const studioHost={refresh:()=>remoteChanged(),toast,show:(html:string)=>show(html),setStatus:(text:string,s:typeof studioState)=>{studioText=text;studioState=s;paintSync();}};
-const loadStudio=()=>import('./studio').then(m=>m.connect(studioHost));
-const syncState=()=>studioSyncOn()?studioState:syncStatus().state;
-function syncLabel(){if(studioSyncOn())return studioText;const s=syncStatus();return s.state==='off'?'Saved on this device':s.state==='syncing'?'Syncing…':s.state==='on'?'Synced online':'Sync paused — '+(s.message||'will retry');}
-// Remote changes re-render the board; wait while a dialog is open so in-progress edits aren't wiped.
-let remotePending=false;
-function remoteChanged(){const before=new Set(state.feedback.map(f=>f.id+f.updated_at)),known=new Set(state.pins.map(p=>p.id)),gone=new Set(state.removed.map(p=>p.id));const done=()=>{const fresh=state.feedback.filter(f=>f.author_name&&!before.has(f.id+f.updated_at)),added=state.pins.filter(p=>p.contributor_name&&!known.has(p.id)),removed=state.removed.filter(p=>!gone.has(p.id));if(removed.length&&!added.length&&!fresh.length){const p=removed[0],b=state.boards.find(x=>x.id===p.board_id);toast(removed.length>1?`Clients removed ${removed.length} cards · see Recently deleted`:`${p.contributor_name||'A client'} removed a card${b?' from '+b.name:''} · see Recently deleted`);}else if(added.length&&!fresh.length){const p=added[0],b=state.boards.find(x=>x.id===p.board_id);toast(added.length>1?`${added.length} new cards from clients`:`${p.contributor_name} added a card${b?' to '+b.name:''}`);}else if(fresh.length){const f=fresh[0],b=state.boards.find(x=>x.id===f.board_id);toast(fresh.length>1?`${fresh.length} new client responses`:`${f.author_name} ${f.text?'commented':'starred an image'}${b?' on '+b.name:''}`);}};
- const go=()=>refresh().then(done);const d=document.querySelector<HTMLDialogElement>('#modal');if(d?.open){remotePending=true;d.addEventListener('close',()=>{if(remotePending){remotePending=false;go();}},{once:true});}else go();}
-function paintSync(){document.querySelectorAll<HTMLElement>('[data-action=library]').forEach(b=>{b.dataset.sync=syncState();b.title=syncLabel();});document.querySelectorAll('.sync-label').forEach(el=>{el.innerHTML=`${icon(syncState()==='off'?'hard-drive':'arrow-left-right')} ${esc(syncLabel())}`;});createIcons({icons});}
-onSyncStatus(paintSync);
-function libraryDialog(){const d=show(`<div class="dialog-heading"><div class="eyebrow">BACK UP · MOVE DEVICES</div><h2>Your whole library</h2><p>With sync on, your boards reach your other signed-in devices automatically. You can also export everything as one file — a backup, or a way to move boards without sync. Importing adds only new or changed items; nothing on the receiving device is removed.</p></div><div class="pin-actions"><button class="primary" id="export-library">${icon('hard-drive')} Export everything</button><button id="import-library">${icon('folder-input')} Import backup or board</button></div><p class="hint">On iPhone, Export opens the Share sheet: save to Files or AirDrop it. On the other device, tap Import and pick the file. </p><p class="sync-label hint">${icon('hard-drive')} ${esc(syncLabel())}</p><div class="pin-actions"><button id="open-studio">${icon('user-round')} Studio account</button></div>${syncStatus().state==='off'?'':'<p class="hint">Live sync is on: changes upload automatically and appear on your other signed-in devices within about 20 seconds. <button id="sync-now">Sync now</button></p>'}`);
- d.querySelector<HTMLButtonElement>('#sync-now')?.addEventListener('click',()=>run(()=>syncNow(remoteChanged)));
- d.querySelector<HTMLButtonElement>('#open-studio')!.onclick=()=>run(async()=>{(await loadStudio()).panel();});
- d.querySelector('.pin-actions')!.insertAdjacentHTML('beforeend',`<button id="open-trash">${icon('trash-2')} Recently deleted</button>`);createIcons({icons});d.querySelector<HTMLButtonElement>('#open-trash')!.onclick=()=>{d.close();trashDialog();};
- d.querySelector<HTMLButtonElement>('#export-library')!.onclick=()=>run(async()=>{const c=await exportLibrary();toast(`Exported ${c.boards} boards, ${c.pins} references`);});
- d.querySelector<HTMLButtonElement>('#import-library')!.onclick=()=>root.querySelector<HTMLInputElement>('#zip-input')!.click();}
-/** Recently deleted: restore boards or cards for RETENTION_DAYS days; after that their unused image files are removed. */
-async function trashDialog(){const {boards,pins}=await recentlyDeleted();const left=(iso:string|null)=>Math.max(0,Math.ceil((Date.parse(String(iso))+RETENTION_DAYS*86400_000-Date.now())/86400_000));
- const thumbs=new Map<string,string>();for(const p of pins)if(p.file_ref){const blob=await file(p.file_ref);if(blob)thumbs.set(p.id,URL.createObjectURL(blob));}
- const d=show(`<div class="dialog-heading"><div class="eyebrow">RECENTLY DELETED</div><h2>Bring something back</h2><p>Deleted boards and references stay here for ${RETENTION_DAYS} days, on every synced device. After that their images are removed to free space — unless another reference still uses the same image.</p></div>
- ${boards.length||pins.length?`<div class="trash-list">${boards.map(({board,count})=>`<div class="trash-row"><div class="trash-thumb">${icon('square')}</div><div><strong>${esc(board.name)}</strong><span>Board · ${count} reference${count===1?'':'s'} · ${left(board.deleted_at)} days left</span></div><button data-restore-board="${board.id}">Restore</button></div>`).join('')}${pins.map(p=>`<div class="trash-row"><div class="trash-thumb">${thumbs.get(p.id)?`<img src="${thumbs.get(p.id)}" alt="">`:icon(p.meta.kind==='link'?'link':'quote')}</div><div><strong>${esc(p.meta.title||p.note||p.source_url||'Untitled reference')}</strong><span>${esc(state.boards.find(b=>b.id===p.board_id)?.name||'Board deleted · returns to Inbox')}${p.deleted_by?.startsWith('guest:')?` · removed by ${esc(p.contributor_name||'a client')}`:''} · ${left(p.deleted_at)} days left</span></div><button data-restore-pin="${p.id}">Restore</button></div>`).join('')}</div>`:'<p class="hint">Nothing deleted in the last 30 days.</p>'}`);
- d.addEventListener('close',()=>thumbs.forEach(u=>URL.revokeObjectURL(u)),{once:true});
- d.querySelectorAll<HTMLButtonElement>('[data-restore-board],[data-restore-pin]').forEach(b=>b.onclick=()=>run(async()=>{const board=b.dataset.restoreBoard;await action({type:board?'board.restore':'pin.restore',id:board||b.dataset.restorePin});b.closest('.trash-row')!.remove();await refresh();toast(board?'Board restored':'Reference restored');}));}
-async function run(fn:()=>Promise<unknown>){try{await fn();}catch(e){toast((e as Error).message||'Something went wrong. Please try again.');}}
-async function sample(){const existing=state.boards.find(b=>b.name==='A quieter kind of blue');if(existing){navigate(existing.id,true,false);await refresh();toast('Select references, then copy to a client board.');return;}const response=await fetch('/sample-plaster.webp');if(!response.ok)throw Error('Sample image is not available offline yet.');const sampleBlob=await response.blob();const b=await action({type:'board.create',payload:{name:'A quieter kind of blue',description:'A sample direction: weathered surfaces, soft colour, and traces of warmth.'}});await action({type:'pin.save',blob:sampleBlob,payload:{board_id:b.id,title:'Layers of colour',note:'Illustrative sample image generated for Studio Wall.',source_credit:'AI-generated sample',is_own:false,palette:await palette(sampleBlob),tags:['blue','plaster','texture']}});await action({type:'pin.save',payload:{board_id:b.id,title:'The starting point',note:'Try a pale blue wash over warm plaster. Let the lower layer show through.',tags:['blue','plaster','texture'],is_own:true}});await action({type:'pin.save',payload:{board_id:b.id,title:'A question for the room',note:'Could this feel calm from a distance, but reveal more texture when you come closer?',tags:['direction'],is_own:true}});const demo=await action({type:'board.create',payload:{name:'Client · Living room',description:'Demo client mood board. Copy references here, then try Collaborate.'}});await action({type:'board.share_settings',id:demo.id,payload:{mode:'private',permission:'contribute'}});navigate(b.id,true,false);await refresh();toast('Demo ready. Select references and copy to Client · Living room.');}
-function toggleSelected(id:string,range=false){const ids=visiblePins.map(p=>p.id);if(range&&selectionAnchor&&ids.includes(selectionAnchor)){const a=ids.indexOf(selectionAnchor),b=ids.indexOf(id);ids.slice(Math.min(a,b),Math.max(a,b)+1).forEach(x=>selection.add(x));}else{selection.has(id)?selection.delete(id):selection.add(id);selectionAnchor=id;}render();}
-function transferDialog(ids:string[],target?:string){const d=show(`<div class="dialog-heading"><div class="eyebrow">BUILD A MOOD BOARD</div><h2>Organize ${ids.length} reference${ids.length===1?'':'s'}</h2><p>Copy keeps the originals. Move takes them out of their current boards.</p></div><form><label>Action<select name="operation"><option value="copy">Copy to board</option><option value="move">Move to board</option></select></label><label>Destination<select name="board_id">${options(target||boardNow()?.id)}</select></label><label>Or create a new board<input name="new_board_name" placeholder="e.g. Client · Living room"></label><p class="form-help">A new board name overrides the destination above. Credits and image data are preserved.</p><p class="error" role="alert"></p><button class="primary">Apply</button></form>`);d.querySelector<HTMLFormElement>('form')!.onsubmit=async e=>{e.preventDefault();const button=d.querySelector<HTMLButtonElement>('form button')!;button.disabled=true;try{const result=await action({type:'pin.batch',payload:{...Object.fromEntries(new FormData(e.target as HTMLFormElement)),ids}});selection.clear();selecting=false;navigate(result.id,true,false);selectionAnchor=null;d.close();await refresh();toast('References added to board');}catch(e){d.querySelector('.error')!.textContent=(e as Error).message;button.disabled=false;}};}
-function bind(){
- const grid=root.querySelector<HTMLElement>('.masonry');if(grid)bindMarquee(grid,selection,render);
- root.querySelectorAll<HTMLButtonElement>('[data-select-pin]').forEach(b=>b.onclick=e=>toggleSelected(b.dataset.selectPin!,e.shiftKey));
- root.querySelectorAll<HTMLElement>('[data-drag-pin]').forEach(el=>el.ondragstart=e=>{const id=el.dataset.dragPin!;const ids=selection.has(id)?[...selection]:[id];e.dataTransfer!.setData('application/x-studio-wall-pins',JSON.stringify(ids));e.dataTransfer!.effectAllowed='copyMove';const badge=document.createElement('div');badge.className='drag-badge';badge.textContent=`${ids.length} reference${ids.length===1?'':'s'}`;document.body.append(badge);e.dataTransfer!.setDragImage?.(badge,20,20);setTimeout(()=>badge.remove(),0);});
- root.querySelectorAll<HTMLElement>('[data-nav]').forEach(el=>{if(!state.boards.some(b=>b.id===el.dataset.nav))return;el.ondragover=e=>{if(e.dataTransfer?.types.includes('application/x-studio-wall-pins')){e.preventDefault();el.classList.add('drop-target');}};el.ondragleave=()=>el.classList.remove('drop-target');el.ondrop=e=>{const raw=e.dataTransfer?.getData('application/x-studio-wall-pins');if(!raw)return;e.preventDefault();e.stopPropagation();el.classList.remove('drop-target');try{const ids=JSON.parse(raw);if(Array.isArray(ids)&&ids.every(id=>typeof id==='string'))transferDialog(ids,el.dataset.nav);}catch{toast('Could not read the dragged references.');}};});
-root.querySelectorAll<HTMLButtonElement>('[data-nav]').forEach(b=>b.onclick=()=>navigate(b.dataset.nav!));root.querySelectorAll<HTMLButtonElement>('[data-pin]').forEach(b=>b.onclick=e=>{if(selecting||e.shiftKey||e.metaKey||e.ctrlKey){toggleSelected(b.dataset.pin!,e.shiftKey);}else focusPin(state.pins.find(p=>p.id===b.dataset.pin)!);});root.querySelectorAll<HTMLButtonElement>('[data-filter]').forEach(b=>b.onclick=()=>{filter=b.dataset.filter!;pickClient='';render();});root.querySelectorAll<HTMLButtonElement>('[data-pick-client]').forEach(b=>b.onclick=()=>{pickClient=b.dataset.pickClient!;render();});
- root.querySelectorAll<HTMLButtonElement>('[data-action]').forEach(b=>b.onclick=()=>{const a=b.dataset.action;if(a==='present'){const ps=selection.size?state.pins.filter(p=>selection.has(p.id)):visiblePins;if(!ps.length){toast('Choose some references first.');return;}openPresentation(ps,image,boardNow()?.name||'Selected inspiration');}if(a==='select'){selecting=!selecting;if(!selecting)selection.clear();render();}if(a==='select-all'){root.querySelectorAll<HTMLElement>('[data-pin]').forEach(el=>selection.add(el.dataset.pin!));render();}if(a==='clear-selection'){selection.clear();render();}if(a==='transfer')transferDialog([...selection]);if(a==='share-selected'){const b=boardNow();const ids=[...selection].filter(id=>state.pins.find(p=>p.id===id)?.board_id===b?.id);if(ids.length)shareDialog(ids);}if(a==='save'){if(client&&boardNow()?.share_settings?.permission!=='contribute'){toast('This preview role cannot add references.');return;}quickAddDialog();}if(a==='back')back();if(a==='forward')forward();if(a==='undo')run(async()=>{if(await undo()){await refresh();toast('Undone');}});if(a==='redo')run(async()=>{if(await redo()){await refresh();toast('Redone');}});if(a==='new-board')boardDialog();if(a==='board-menu')boardDialog(boardNow());if(a==='share')shareDialog();if(a==='exit-preview'){client=false;render();}if(a==='theme'){theme=theme==='dark'?'light':'dark';localStorage.setItem('studio-wall-theme',theme);document.documentElement.dataset.theme=theme;render();}if(a==='library')libraryDialog();if(a==='studio')run(async()=>{(await loadStudio()).panel();});if(a==='trash')trashDialog();if(a==='import')root.querySelector<HTMLInputElement>('#zip-input')!.click();if(a==='sample')run(sample);});
- root.querySelector<HTMLInputElement>('#search')?.addEventListener('input',e=>{const target=e.target as HTMLInputElement;const position=target.selectionStart;query=target.value;render();const n=root.querySelector<HTMLInputElement>('#search')!;n.focus();n.setSelectionRange(position,position);});
- root.querySelector<HTMLInputElement>('#zip-input')!.onchange=e=>run(async()=>{const input=e.target as HTMLInputElement;const f=input.files?.[0];input.value='';if(f){document.querySelector<HTMLDialogElement>('#modal')?.close();const r=await importAny(f);if(r.kind==='board'){navigate(r.board.id,true,false);await refresh();toast('Board imported');}else{await refresh();toast(r.counts.boards+r.counts.pins+r.counts.feedback?`Added or updated ${r.counts.boards} boards, ${r.counts.pins} references`:'Already up to date');}}});
- root.querySelectorAll<HTMLButtonElement>('[data-up]').forEach(b=>b.onclick=()=>run(async()=>{const index=state.boards.findIndex(x=>x.id===b.dataset.up);if(index<1)return;const current=state.boards[index],prev=state.boards[index-1];await action({type:'board.update',id:current.id,payload:{position:prev.position}});await action({type:'board.update',id:prev.id,payload:{position:current.position}});await refresh();}));
- root.querySelector<HTMLFormElement>('#feedback-form')?.addEventListener('submit',e=>{e.preventDefault();run(async()=>{await action({type:'feedback.add',payload:{board_id:view,text:root.querySelector<HTMLTextAreaElement>('#feedback-text')!.value,client_preview:client}});await refresh();toast('Comment saved locally');});});
+  const permission = d.querySelector<HTMLSelectElement>('#share-settings [name=permission]')!;
+  permission.value = settings.permission;
+  const comments = d.querySelector<HTMLInputElement>('[name=comments_enabled]')!;
+  comments.onchange = () =>
+    run(async () => {
+      await action({type: 'board.update', id: board.id, payload: {comments_enabled: comments.checked}});
+      toast(comments.checked ? 'Client comments on' : 'Links are now view only');
+    });
+  d.querySelector('#client-preview')!.addEventListener('click', () =>
+    run(async () => {
+      await action({
+        type: 'board.share_settings',
+        id: board.id,
+        payload: {mode: settings.mode, permission: permission.value},
+      });
+      await action({type: 'board.update', id: board.id, payload: {comments_enabled: comments.checked}});
+      d.close();
+      await refresh();
+      client = true;
+      render();
+    }),
+  );
+  if (!online) return;
+  const list = d.querySelector<HTMLElement>('#link-list')!;
+  const when = (iso: string | null) =>
+    iso ? new Date(iso).toLocaleDateString(undefined, {month: 'short', day: 'numeric', year: 'numeric'}) : 'never';
+  const share = async (url: string) => {
+    try {
+      if (navigator.share && matchMedia('(pointer:coarse)').matches) {
+        await navigator.share({title: board.name, url});
+        return;
+      }
+    } catch (e) {
+      if ((e as Error).name === 'AbortError') return;
+    }
+    try {
+      await navigator.clipboard.writeText(url);
+      toast('Link copied');
+    } catch {
+      prompt('Copy this link', url);
+    }
+  };
+  const draw = async () => {
+    try {
+      const links = (await listShares()).filter(x => x.board_id === board.id);
+      list.innerHTML = links.length
+        ? links
+            .map(
+              x =>
+                `<div class="link-row"><div><strong>${x.permission === 'contribute' ? 'View, comment and add cards' : x.permission === 'comment' ? 'View, star and comment' : 'View only'}</strong><span>${x.pin_count ? `${x.pin_count} selected card${x.pin_count === 1 ? '' : 's'} · ` : ''}${x.locked ? 'Password · ' : ''}Created ${when(x.created_at)} · expires ${when(x.expires_at)}</span></div><button data-copy="${x.token}">${icon('link')} ${'share' in navigator && matchMedia('(pointer:coarse)').matches ? 'Share' : 'Copy'}</button><button class="danger" data-revoke="${x.token}">Turn off</button></div>`,
+            )
+            .join('')
+        : '<p class="hint">No active links for this board.</p>';
+      createIcons({icons});
+      list
+        .querySelectorAll<HTMLButtonElement>('[data-copy]')
+        .forEach(b => (b.onclick = () => share(shareUrl(b.dataset.copy!))));
+      list.querySelectorAll<HTMLButtonElement>('[data-revoke]').forEach(
+        b =>
+          (b.onclick = () =>
+            run(async () => {
+              if (!confirm('Turn off this link? Anyone using it will lose access.')) return;
+              await revokeShare(b.dataset.revoke!);
+              toast('Link turned off');
+              await draw();
+            })),
+      );
+    } catch (e) {
+      list.innerHTML = `<p class="error">${esc((e as Error).message)}</p>`;
+    }
+  };
+  d.querySelector<HTMLFormElement>('#new-link')!.onsubmit = async e => {
+    e.preventDefault();
+    const f = e.target as HTMLFormElement,
+      btn = f.querySelector('button')!;
+    btn.disabled = true;
+    try {
+      await syncNow(remoteChanged);
+      const v = Object.fromEntries(new FormData(f));
+      const x = await createShare(
+        board.id,
+        v.permission as Permission,
+        Number(v.expires),
+        String(v.password || ''),
+        only,
+      );
+      f.reset();
+      await draw();
+      await share(shareUrl(x.token));
+    } catch (err) {
+      f.querySelector('.error')!.textContent = (err as Error).message;
+    } finally {
+      btn.disabled = false;
+    }
+  };
+  draw();
 }
-document.addEventListener('dragover',e=>{if(e.dataTransfer?.types.includes('Files')){e.preventDefault();document.body.classList.add('dragging');}});document.addEventListener('dragleave',e=>{if(!e.relatedTarget)document.body.classList.remove('dragging');});document.addEventListener('drop',e=>{e.preventDefault();document.body.classList.remove('dragging');const fs=Array.from(e.dataTransfer?.files||[]).filter(f=>isImageFile(f));if(fs.length){document.querySelector<HTMLDialogElement>('dialog')?.close();saveDialog(fs);}});
-document.addEventListener('paste',e=>{if((e.target as HTMLElement).matches('input,textarea'))return;const fs=Array.from(e.clipboardData?.files||[]);if(fs.length){e.preventDefault();saveDialog(fs);}else{const text=e.clipboardData?.getData('text/plain');if(text&&/^https?:\/\//i.test(text)){saveDialog(undefined,'link');document.querySelector<HTMLInputElement>('[name=source_url]')!.value=text;}}});document.addEventListener('keydown',e=>{const editing=(e.target as HTMLElement).matches('input,textarea');if(e.key==='/'&&!editing){e.preventDefault();document.querySelector<HTMLInputElement>('#search')?.focus();}if(!editing&&(e.metaKey||e.ctrlKey)&&e.key.toLowerCase()==='z'){e.preventDefault();run(async()=>{const ok=e.shiftKey?await redo():await undo();if(ok){await refresh();toast(e.shiftKey?'Redone':'Undone');}});}});
-async function boot(){try{await initialize();action({type:'files.purge',payload:{fromSync:true},recordHistory:false}).catch(()=>{});await refresh();navigator.storage?.persist?.().catch(()=>{});if(studioSyncOn())loadStudio().then(s=>s.start(),()=>studioHost.setStatus('Studio · can’t load studio sync: reload to try again','error'));else startSync(remoteChanged);if('serviceWorker'in navigator&&import.meta.env.PROD)navigator.serviceWorker.register('/sw.js').catch(()=>toast('Offline setup failed. Reopen while online to try again.'));}catch(e){root.innerHTML=`<div class="empty"><h1>Studio Wall could not open local storage.</h1><p>${esc((e as Error).message)}</p><p>Allow browser storage, then reload.</p></div>`;}}boot();
+// Studio sync (src/studio.ts, loaded only when signed in) replaces old sync on a device that switched to it.
+let studioText = 'Studio · starting…',
+  studioState: 'off' | 'syncing' | 'on' | 'error' = 'syncing';
+const studioHost = {
+  refresh: () => remoteChanged(),
+  toast,
+  show: (html: string) => show(html),
+  setStatus: (text: string, s: typeof studioState) => {
+    studioText = text;
+    studioState = s;
+    paintSync();
+  },
+};
+const loadStudio = () => import('./studio').then(m => m.connect(studioHost));
+const syncState = () => (studioSyncOn() ? studioState : syncStatus().state);
+function syncLabel() {
+  if (studioSyncOn()) return studioText;
+  const s = syncStatus();
+  return s.state === 'off'
+    ? 'Saved on this device'
+    : s.state === 'syncing'
+      ? 'Syncing…'
+      : s.state === 'on'
+        ? 'Synced online'
+        : 'Sync paused — ' + (s.message || 'will retry');
+}
+// Remote changes re-render the board; wait while a dialog is open so in-progress edits aren't wiped.
+let remotePending = false;
+function remoteChanged() {
+  const before = new Set(state.feedback.map(f => f.id + f.updated_at)),
+    known = new Set(state.pins.map(p => p.id)),
+    gone = new Set(state.removed.map(p => p.id));
+  const done = () => {
+    const fresh = state.feedback.filter(f => f.author_name && !before.has(f.id + f.updated_at)),
+      added = state.pins.filter(p => p.contributor_name && !known.has(p.id)),
+      removed = state.removed.filter(p => !gone.has(p.id));
+    if (removed.length && !added.length && !fresh.length) {
+      const p = removed[0],
+        b = state.boards.find(x => x.id === p.board_id);
+      toast(
+        removed.length > 1
+          ? `Clients removed ${removed.length} cards · see Recently deleted`
+          : `${p.contributor_name || 'A client'} removed a card${b ? ' from ' + b.name : ''} · see Recently deleted`,
+      );
+    } else if (added.length && !fresh.length) {
+      const p = added[0],
+        b = state.boards.find(x => x.id === p.board_id);
+      toast(
+        added.length > 1
+          ? `${added.length} new cards from clients`
+          : `${p.contributor_name} added a card${b ? ' to ' + b.name : ''}`,
+      );
+    } else if (fresh.length) {
+      const f = fresh[0],
+        b = state.boards.find(x => x.id === f.board_id);
+      toast(
+        fresh.length > 1
+          ? `${fresh.length} new client responses`
+          : `${f.author_name} ${f.text ? 'commented' : 'starred an image'}${b ? ' on ' + b.name : ''}`,
+      );
+    }
+  };
+  const go = () => refresh().then(done);
+  const d = document.querySelector<HTMLDialogElement>('#modal');
+  if (d?.open) {
+    remotePending = true;
+    d.addEventListener(
+      'close',
+      () => {
+        if (remotePending) {
+          remotePending = false;
+          go();
+        }
+      },
+      {once: true},
+    );
+  } else go();
+}
+function paintSync() {
+  document.querySelectorAll<HTMLElement>('[data-action=library]').forEach(b => {
+    b.dataset.sync = syncState();
+    b.title = syncLabel();
+  });
+  document.querySelectorAll('.sync-label').forEach(el => {
+    el.innerHTML = `${icon(syncState() === 'off' ? 'hard-drive' : 'arrow-left-right')} ${esc(syncLabel())}`;
+  });
+  createIcons({icons});
+}
+onSyncStatus(paintSync);
+function libraryDialog() {
+  const d = show(
+    `<div class="dialog-heading"><div class="eyebrow">BACK UP · MOVE DEVICES</div><h2>Your whole library</h2><p>With sync on, your boards reach your other signed-in devices automatically. You can also export everything as one file — a backup, or a way to move boards without sync. Importing adds only new or changed items; nothing on the receiving device is removed.</p></div><div class="pin-actions"><button class="primary" id="export-library">${icon('hard-drive')} Export everything</button><button id="import-library">${icon('folder-input')} Import backup or board</button></div><p class="hint">On iPhone, Export opens the Share sheet: save to Files or AirDrop it. On the other device, tap Import and pick the file. </p><p class="sync-label hint">${icon('hard-drive')} ${esc(syncLabel())}</p><div class="pin-actions"><button id="open-studio">${icon('user-round')} Studio account</button></div>${syncStatus().state === 'off' ? '' : '<p class="hint">Live sync is on: changes upload automatically and appear on your other signed-in devices within about 20 seconds. <button id="sync-now">Sync now</button></p>'}`,
+  );
+  d.querySelector<HTMLButtonElement>('#sync-now')?.addEventListener('click', () => run(() => syncNow(remoteChanged)));
+  d.querySelector<HTMLButtonElement>('#open-studio')!.onclick = () =>
+    run(async () => {
+      (await loadStudio()).panel();
+    });
+  d.querySelector('.pin-actions')!.insertAdjacentHTML(
+    'beforeend',
+    `<button id="open-trash">${icon('trash-2')} Recently deleted</button>`,
+  );
+  createIcons({icons});
+  d.querySelector<HTMLButtonElement>('#open-trash')!.onclick = () => {
+    d.close();
+    trashDialog();
+  };
+  d.querySelector<HTMLButtonElement>('#export-library')!.onclick = () =>
+    run(async () => {
+      const c = await exportLibrary();
+      toast(`Exported ${c.boards} boards, ${c.pins} references`);
+    });
+  d.querySelector<HTMLButtonElement>('#import-library')!.onclick = () =>
+    root.querySelector<HTMLInputElement>('#zip-input')!.click();
+}
+/** Recently deleted: restore boards or cards for RETENTION_DAYS days; after that their unused image files are removed. */
+async function trashDialog() {
+  const {boards, pins} = await recentlyDeleted();
+  const left = (iso: string | null) =>
+    Math.max(0, Math.ceil((Date.parse(String(iso)) + RETENTION_DAYS * 86400_000 - Date.now()) / 86400_000));
+  const thumbs = new Map<string, string>();
+  for (const p of pins)
+    if (p.file_ref) {
+      const blob = await file(p.file_ref);
+      if (blob) thumbs.set(p.id, URL.createObjectURL(blob));
+    }
+  const d =
+    show(`<div class="dialog-heading"><div class="eyebrow">RECENTLY DELETED</div><h2>Bring something back</h2><p>Deleted boards and references stay here for ${RETENTION_DAYS} days, on every synced device. After that their images are removed to free space — unless another reference still uses the same image.</p></div>
+ ${boards.length || pins.length ? `<div class="trash-list">${boards.map(({board, count}) => `<div class="trash-row"><div class="trash-thumb">${icon('square')}</div><div><strong>${esc(board.name)}</strong><span>Board · ${count} reference${count === 1 ? '' : 's'} · ${left(board.deleted_at)} days left</span></div><button data-restore-board="${board.id}">Restore</button></div>`).join('')}${pins.map(p => `<div class="trash-row"><div class="trash-thumb">${thumbs.get(p.id) ? `<img src="${thumbs.get(p.id)}" alt="">` : icon(p.meta.kind === 'link' ? 'link' : 'quote')}</div><div><strong>${esc(p.meta.title || p.note || p.source_url || 'Untitled reference')}</strong><span>${esc(state.boards.find(b => b.id === p.board_id)?.name || 'Board deleted · returns to Inbox')}${p.deleted_by?.startsWith('guest:') ? ` · removed by ${esc(p.contributor_name || 'a client')}` : ''} · ${left(p.deleted_at)} days left</span></div><button data-restore-pin="${p.id}">Restore</button></div>`).join('')}</div>` : '<p class="hint">Nothing deleted in the last 30 days.</p>'}`);
+  d.addEventListener('close', () => thumbs.forEach(u => URL.revokeObjectURL(u)), {once: true});
+  d.querySelectorAll<HTMLButtonElement>('[data-restore-board],[data-restore-pin]').forEach(
+    b =>
+      (b.onclick = () =>
+        run(async () => {
+          const board = b.dataset.restoreBoard;
+          await action({type: board ? 'board.restore' : 'pin.restore', id: board || b.dataset.restorePin});
+          b.closest('.trash-row')!.remove();
+          await refresh();
+          toast(board ? 'Board restored' : 'Reference restored');
+        })),
+  );
+}
+async function run(fn: () => Promise<unknown>) {
+  try {
+    await fn();
+  } catch (e) {
+    toast((e as Error).message || 'Something went wrong. Please try again.');
+  }
+}
+async function sample() {
+  const existing = state.boards.find(b => b.name === 'A quieter kind of blue');
+  if (existing) {
+    navigate(existing.id, true, false);
+    await refresh();
+    toast('Select references, then copy to a client board.');
+    return;
+  }
+  const response = await fetch('/sample-plaster.webp');
+  if (!response.ok) throw Error('Sample image is not available offline yet.');
+  const sampleBlob = await response.blob();
+  const b = await action({
+    type: 'board.create',
+    payload: {
+      name: 'A quieter kind of blue',
+      description: 'A sample direction: weathered surfaces, soft colour, and traces of warmth.',
+    },
+  });
+  await action({
+    type: 'pin.save',
+    blob: sampleBlob,
+    payload: {
+      board_id: b.id,
+      title: 'Layers of colour',
+      note: 'Illustrative sample image generated for Studio Wall.',
+      source_credit: 'AI-generated sample',
+      is_own: false,
+      palette: await palette(sampleBlob),
+      tags: ['blue', 'plaster', 'texture'],
+    },
+  });
+  await action({
+    type: 'pin.save',
+    payload: {
+      board_id: b.id,
+      title: 'The starting point',
+      note: 'Try a pale blue wash over warm plaster. Let the lower layer show through.',
+      tags: ['blue', 'plaster', 'texture'],
+      is_own: true,
+    },
+  });
+  await action({
+    type: 'pin.save',
+    payload: {
+      board_id: b.id,
+      title: 'A question for the room',
+      note: 'Could this feel calm from a distance, but reveal more texture when you come closer?',
+      tags: ['direction'],
+      is_own: true,
+    },
+  });
+  const demo = await action({
+    type: 'board.create',
+    payload: {
+      name: 'Client · Living room',
+      description: 'Demo client mood board. Copy references here, then try Collaborate.',
+    },
+  });
+  await action({type: 'board.share_settings', id: demo.id, payload: {mode: 'private', permission: 'contribute'}});
+  navigate(b.id, true, false);
+  await refresh();
+  toast('Demo ready. Select references and copy to Client · Living room.');
+}
+function toggleSelected(id: string, range = false) {
+  const ids = visiblePins.map(p => p.id);
+  if (range && selectionAnchor && ids.includes(selectionAnchor)) {
+    const a = ids.indexOf(selectionAnchor),
+      b = ids.indexOf(id);
+    ids.slice(Math.min(a, b), Math.max(a, b) + 1).forEach(x => selection.add(x));
+  } else {
+    selection.has(id) ? selection.delete(id) : selection.add(id);
+    selectionAnchor = id;
+  }
+  render();
+}
+function transferDialog(ids: string[], target?: string) {
+  const d = show(
+    `<div class="dialog-heading"><div class="eyebrow">BUILD A MOOD BOARD</div><h2>Organize ${ids.length} reference${ids.length === 1 ? '' : 's'}</h2><p>Copy keeps the originals. Move takes them out of their current boards.</p></div><form><label>Action<select name="operation"><option value="copy">Copy to board</option><option value="move">Move to board</option></select></label><label>Destination<select name="board_id">${options(target || boardNow()?.id)}</select></label><label>Or create a new board<input name="new_board_name" placeholder="e.g. Client · Living room"></label><p class="form-help">A new board name overrides the destination above. Credits and image data are preserved.</p><p class="error" role="alert"></p><button class="primary">Apply</button></form>`,
+  );
+  d.querySelector<HTMLFormElement>('form')!.onsubmit = async e => {
+    e.preventDefault();
+    const button = d.querySelector<HTMLButtonElement>('form button')!;
+    button.disabled = true;
+    try {
+      const result = await action({
+        type: 'pin.batch',
+        payload: {...Object.fromEntries(new FormData(e.target as HTMLFormElement)), ids},
+      });
+      selection.clear();
+      selecting = false;
+      navigate(result.id, true, false);
+      selectionAnchor = null;
+      d.close();
+      await refresh();
+      toast('References added to board');
+    } catch (e) {
+      d.querySelector('.error')!.textContent = (e as Error).message;
+      button.disabled = false;
+    }
+  };
+}
+function bind() {
+  const grid = root.querySelector<HTMLElement>('.masonry');
+  if (grid) bindMarquee(grid, selection, render);
+  root
+    .querySelectorAll<HTMLButtonElement>('[data-select-pin]')
+    .forEach(b => (b.onclick = e => toggleSelected(b.dataset.selectPin!, e.shiftKey)));
+  root.querySelectorAll<HTMLElement>('[data-drag-pin]').forEach(
+    el =>
+      (el.ondragstart = e => {
+        const id = el.dataset.dragPin!;
+        const ids = selection.has(id) ? [...selection] : [id];
+        e.dataTransfer!.setData('application/x-studio-wall-pins', JSON.stringify(ids));
+        e.dataTransfer!.effectAllowed = 'copyMove';
+        const badge = document.createElement('div');
+        badge.className = 'drag-badge';
+        badge.textContent = `${ids.length} reference${ids.length === 1 ? '' : 's'}`;
+        document.body.append(badge);
+        e.dataTransfer!.setDragImage?.(badge, 20, 20);
+        setTimeout(() => badge.remove(), 0);
+      }),
+  );
+  root.querySelectorAll<HTMLElement>('[data-nav]').forEach(el => {
+    if (!state.boards.some(b => b.id === el.dataset.nav)) return;
+    el.ondragover = e => {
+      if (e.dataTransfer?.types.includes('application/x-studio-wall-pins')) {
+        e.preventDefault();
+        el.classList.add('drop-target');
+      }
+    };
+    el.ondragleave = () => el.classList.remove('drop-target');
+    el.ondrop = e => {
+      const raw = e.dataTransfer?.getData('application/x-studio-wall-pins');
+      if (!raw) return;
+      e.preventDefault();
+      e.stopPropagation();
+      el.classList.remove('drop-target');
+      try {
+        const ids = JSON.parse(raw);
+        if (Array.isArray(ids) && ids.every(id => typeof id === 'string')) transferDialog(ids, el.dataset.nav);
+      } catch {
+        toast('Could not read the dragged references.');
+      }
+    };
+  });
+  root.querySelectorAll<HTMLButtonElement>('[data-nav]').forEach(b => (b.onclick = () => navigate(b.dataset.nav!)));
+  root.querySelectorAll<HTMLButtonElement>('[data-pin]').forEach(
+    b =>
+      (b.onclick = e => {
+        if (selecting || e.shiftKey || e.metaKey || e.ctrlKey) {
+          toggleSelected(b.dataset.pin!, e.shiftKey);
+        } else focusPin(state.pins.find(p => p.id === b.dataset.pin)!);
+      }),
+  );
+  root.querySelectorAll<HTMLButtonElement>('[data-filter]').forEach(
+    b =>
+      (b.onclick = () => {
+        filter = b.dataset.filter!;
+        pickClient = '';
+        render();
+      }),
+  );
+  root.querySelectorAll<HTMLButtonElement>('[data-pick-client]').forEach(
+    b =>
+      (b.onclick = () => {
+        pickClient = b.dataset.pickClient!;
+        render();
+      }),
+  );
+  root.querySelectorAll<HTMLButtonElement>('[data-action]').forEach(
+    b =>
+      (b.onclick = () => {
+        const a = b.dataset.action;
+        if (a === 'present') {
+          const ps = selection.size ? state.pins.filter(p => selection.has(p.id)) : visiblePins;
+          if (!ps.length) {
+            toast('Choose some references first.');
+            return;
+          }
+          openPresentation(ps, image, boardNow()?.name || 'Selected inspiration');
+        }
+        if (a === 'select') {
+          selecting = !selecting;
+          if (!selecting) selection.clear();
+          render();
+        }
+        if (a === 'select-all') {
+          root.querySelectorAll<HTMLElement>('[data-pin]').forEach(el => selection.add(el.dataset.pin!));
+          render();
+        }
+        if (a === 'clear-selection') {
+          selection.clear();
+          render();
+        }
+        if (a === 'transfer') transferDialog([...selection]);
+        if (a === 'share-selected') {
+          const b = boardNow();
+          const ids = [...selection].filter(id => state.pins.find(p => p.id === id)?.board_id === b?.id);
+          if (ids.length) shareDialog(ids);
+        }
+        if (a === 'save') {
+          if (client && boardNow()?.share_settings?.permission !== 'contribute') {
+            toast('This preview role cannot add references.');
+            return;
+          }
+          quickAddDialog();
+        }
+        if (a === 'back') back();
+        if (a === 'forward') forward();
+        if (a === 'undo')
+          run(async () => {
+            if (await undo()) {
+              await refresh();
+              toast('Undone');
+            }
+          });
+        if (a === 'redo')
+          run(async () => {
+            if (await redo()) {
+              await refresh();
+              toast('Redone');
+            }
+          });
+        if (a === 'new-board') boardDialog();
+        if (a === 'board-menu') boardDialog(boardNow());
+        if (a === 'share') shareDialog();
+        if (a === 'exit-preview') {
+          client = false;
+          render();
+        }
+        if (a === 'theme') {
+          theme = theme === 'dark' ? 'light' : 'dark';
+          localStorage.setItem('studio-wall-theme', theme);
+          document.documentElement.dataset.theme = theme;
+          render();
+        }
+        if (a === 'library') libraryDialog();
+        if (a === 'studio')
+          run(async () => {
+            (await loadStudio()).panel();
+          });
+        if (a === 'trash') trashDialog();
+        if (a === 'import') root.querySelector<HTMLInputElement>('#zip-input')!.click();
+        if (a === 'sample') run(sample);
+      }),
+  );
+  root.querySelector<HTMLInputElement>('#search')?.addEventListener('input', e => {
+    const target = e.target as HTMLInputElement;
+    const position = target.selectionStart;
+    query = target.value;
+    render();
+    const n = root.querySelector<HTMLInputElement>('#search')!;
+    n.focus();
+    n.setSelectionRange(position, position);
+  });
+  root.querySelector<HTMLInputElement>('#zip-input')!.onchange = e =>
+    run(async () => {
+      const input = e.target as HTMLInputElement;
+      const f = input.files?.[0];
+      input.value = '';
+      if (f) {
+        document.querySelector<HTMLDialogElement>('#modal')?.close();
+        const r = await importAny(f);
+        if (r.kind === 'board') {
+          navigate(r.board.id, true, false);
+          await refresh();
+          toast('Board imported');
+        } else {
+          await refresh();
+          toast(
+            r.counts.boards + r.counts.pins + r.counts.feedback
+              ? `Added or updated ${r.counts.boards} boards, ${r.counts.pins} references`
+              : 'Already up to date',
+          );
+        }
+      }
+    });
+  root.querySelectorAll<HTMLButtonElement>('[data-up]').forEach(
+    b =>
+      (b.onclick = () =>
+        run(async () => {
+          const index = state.boards.findIndex(x => x.id === b.dataset.up);
+          if (index < 1) return;
+          const current = state.boards[index],
+            prev = state.boards[index - 1];
+          await action({type: 'board.update', id: current.id, payload: {position: prev.position}});
+          await action({type: 'board.update', id: prev.id, payload: {position: current.position}});
+          await refresh();
+        })),
+  );
+  root.querySelector<HTMLFormElement>('#feedback-form')?.addEventListener('submit', e => {
+    e.preventDefault();
+    run(async () => {
+      await action({
+        type: 'feedback.add',
+        payload: {
+          board_id: view,
+          text: root.querySelector<HTMLTextAreaElement>('#feedback-text')!.value,
+          client_preview: client,
+        },
+      });
+      await refresh();
+      toast('Comment saved locally');
+    });
+  });
+}
+document.addEventListener('dragover', e => {
+  if (e.dataTransfer?.types.includes('Files')) {
+    e.preventDefault();
+    document.body.classList.add('dragging');
+  }
+});
+document.addEventListener('dragleave', e => {
+  if (!e.relatedTarget) document.body.classList.remove('dragging');
+});
+document.addEventListener('drop', e => {
+  e.preventDefault();
+  document.body.classList.remove('dragging');
+  const fs = Array.from(e.dataTransfer?.files || []).filter(f => isImageFile(f));
+  if (fs.length) {
+    document.querySelector<HTMLDialogElement>('dialog')?.close();
+    saveDialog(fs);
+  }
+});
+document.addEventListener('paste', e => {
+  if ((e.target as HTMLElement).matches('input,textarea')) return;
+  const fs = Array.from(e.clipboardData?.files || []);
+  if (fs.length) {
+    e.preventDefault();
+    saveDialog(fs);
+  } else {
+    const text = e.clipboardData?.getData('text/plain');
+    if (text && /^https?:\/\//i.test(text)) {
+      saveDialog(undefined, 'link');
+      document.querySelector<HTMLInputElement>('[name=source_url]')!.value = text;
+    }
+  }
+});
+document.addEventListener('keydown', e => {
+  const editing = (e.target as HTMLElement).matches('input,textarea');
+  if (e.key === '/' && !editing) {
+    e.preventDefault();
+    document.querySelector<HTMLInputElement>('#search')?.focus();
+  }
+  if (!editing && (e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'z') {
+    e.preventDefault();
+    run(async () => {
+      const ok = e.shiftKey ? await redo() : await undo();
+      if (ok) {
+        await refresh();
+        toast(e.shiftKey ? 'Redone' : 'Undone');
+      }
+    });
+  }
+});
+async function boot() {
+  try {
+    await initialize();
+    action({type: 'files.purge', payload: {fromSync: true}, recordHistory: false}).catch(() => {});
+    await refresh();
+    navigator.storage?.persist?.().catch(() => {});
+    if (studioSyncOn())
+      loadStudio().then(
+        s => s.start(),
+        () => studioHost.setStatus('Studio · can’t load studio sync: reload to try again', 'error'),
+      );
+    else startSync(remoteChanged);
+    if ('serviceWorker' in navigator && import.meta.env.PROD)
+      navigator.serviceWorker
+        .register('/sw.js')
+        .catch(() => toast('Offline setup failed. Reopen while online to try again.'));
+  } catch (e) {
+    root.innerHTML = `<div class="empty"><h1>Studio Wall could not open local storage.</h1><p>${esc((e as Error).message)}</p><p>Allow browser storage, then reload.</p></div>`;
+  }
+}
+boot();

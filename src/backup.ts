@@ -1,23 +1,136 @@
-import {zipSync,unzipSync,strToU8,strFromU8} from 'fflate';
-import {snapshot,file,action,database,type Board,type Pin,type Feedback} from './data';
-export async function exportBoard(board:Board){const pins=(await snapshot()).pins.filter(p=>p.board_id===board.id);const files:Record<string,Uint8Array>={};const mime:Record<string,string>={};for(const p of pins)if(p.file_ref){const blob=await file(p.file_ref);if(blob){files['images/'+p.file_ref]=new Uint8Array(await blob.arrayBuffer());mime[p.file_ref]=blob.type;}}files['board.json']=strToU8(JSON.stringify({format:'studio-wall',version:1,board,pins,mime},null,2));const data=zipSync(files);const url=URL.createObjectURL(new Blob([data as BlobPart],{type:'application/zip'}));const link=document.createElement('a');link.href=url;link.download=board.name.replace(/[^a-z0-9_-]/gi,'-')+'.zip';link.click();setTimeout(()=>URL.revokeObjectURL(url),5000);}
-export async function importBoard(blob:Blob){if(blob.size>50*1024*1024)throw Error('Please import a ZIP smaller than 50 MB.');const files=unzipSync(new Uint8Array(await blob.arrayBuffer()));if(!files['board.json'])throw Error('Choose a Studio Wall board export.');const data=JSON.parse(strFromU8(files['board.json']));if(data.format!=='studio-wall'||data.version!==1||!Array.isArray(data.pins)||data.pins.length>1000||typeof data.board?.name!=='string')throw Error('This board export is not supported.');
- for(const p of data.pins){if(typeof p.note!=='string'||!Array.isArray(p.tags)||!p.tags.every((t:unknown)=>typeof t==='string')||!Array.isArray(p.palette)||!p.palette.every((c:unknown)=>typeof c==='string'&&/^#[0-9a-f]{6}$/i.test(c))||p.source_url&&!/^https?:\/\//i.test(p.source_url)||p.file_ref&&!files['images/'+p.file_ref])throw Error('This board contains invalid or missing data.');}
- // One atomic action: the board and every card land together or not at all.
- const blobs:Record<string,Blob>={};for(const p of data.pins as Pin[])if(p.file_ref)blobs[p.file_ref]=new Blob([files['images/'+p.file_ref] as BlobPart],{type:data.mime?.[p.file_ref]||'image/jpeg'});
- return (await action({type:'board.import',payload:{name:data.board.name+' (imported)',description:data.board.description,pins:data.pins},blobs})).board as Board;
+import {zipSync, unzipSync, strToU8, strFromU8} from 'fflate';
+import {snapshot, file, action, database, type Board, type Pin, type Feedback} from './data';
+export async function exportBoard(board: Board) {
+  const pins = (await snapshot()).pins.filter(p => p.board_id === board.id);
+  const files: Record<string, Uint8Array> = {};
+  const mime: Record<string, string> = {};
+  for (const p of pins)
+    if (p.file_ref) {
+      const blob = await file(p.file_ref);
+      if (blob) {
+        files['images/' + p.file_ref] = new Uint8Array(await blob.arrayBuffer());
+        mime[p.file_ref] = blob.type;
+      }
+    }
+  files['board.json'] = strToU8(JSON.stringify({format: 'studio-wall', version: 1, board, pins, mime}, null, 2));
+  const data = zipSync(files);
+  const url = URL.createObjectURL(new Blob([data as BlobPart], {type: 'application/zip'}));
+  const link = document.createElement('a');
+  link.href = url;
+  link.download = board.name.replace(/[^a-z0-9_-]/gi, '-') + '.zip';
+  link.click();
+  setTimeout(() => URL.revokeObjectURL(url), 5000);
 }
-const MAX_IMPORT=500*1024*1024;
-async function rawLibrary(){const db=await database;const [boards,pins,feedback]=await Promise.all(['boards','pins','feedback'].map(s=>db.getAll(s)));return {boards:boards as Board[],pins:pins as Pin[],feedback:feedback as Feedback[]};}
-export async function libraryZip(){const data=await rawLibrary();const files:Record<string,Uint8Array>={};const mime:Record<string,string>={};for(const p of data.pins)if(p.file_ref&&!files['images/'+p.file_ref]){const blob=await file(p.file_ref);if(blob){files['images/'+p.file_ref]=new Uint8Array(await blob.arrayBuffer());mime[p.file_ref]=blob.type;}}
- files['library.json']=strToU8(JSON.stringify({format:'studio-wall-library',version:1,exported_at:new Date().toISOString(),...data,mime}));return {zip:zipSync(files,{level:0}),counts:{boards:data.boards.filter(b=>!b.deleted_at).length,pins:data.pins.filter(p=>!p.deleted_at).length}};}
+export async function importBoard(blob: Blob) {
+  if (blob.size > 50 * 1024 * 1024) throw Error('Please import a ZIP smaller than 50 MB.');
+  const files = unzipSync(new Uint8Array(await blob.arrayBuffer()));
+  if (!files['board.json']) throw Error('Choose a Studio Wall board export.');
+  const data = JSON.parse(strFromU8(files['board.json']));
+  if (
+    data.format !== 'studio-wall' ||
+    data.version !== 1 ||
+    !Array.isArray(data.pins) ||
+    data.pins.length > 1000 ||
+    typeof data.board?.name !== 'string'
+  )
+    throw Error('This board export is not supported.');
+  for (const p of data.pins) {
+    if (
+      typeof p.note !== 'string' ||
+      !Array.isArray(p.tags) ||
+      !p.tags.every((t: unknown) => typeof t === 'string') ||
+      !Array.isArray(p.palette) ||
+      !p.palette.every((c: unknown) => typeof c === 'string' && /^#[0-9a-f]{6}$/i.test(c)) ||
+      (p.source_url && !/^https?:\/\//i.test(p.source_url)) ||
+      (p.file_ref && !files['images/' + p.file_ref])
+    )
+      throw Error('This board contains invalid or missing data.');
+  }
+  // One atomic action: the board and every card land together or not at all.
+  const blobs: Record<string, Blob> = {};
+  for (const p of data.pins as Pin[])
+    if (p.file_ref)
+      blobs[p.file_ref] = new Blob([files['images/' + p.file_ref] as BlobPart], {
+        type: data.mime?.[p.file_ref] || 'image/jpeg',
+      });
+  return (
+    await action({
+      type: 'board.import',
+      payload: {name: data.board.name + ' (imported)', description: data.board.description, pins: data.pins},
+      blobs,
+    })
+  ).board as Board;
+}
+const MAX_IMPORT = 500 * 1024 * 1024;
+async function rawLibrary() {
+  const db = await database;
+  const [boards, pins, feedback] = await Promise.all(['boards', 'pins', 'feedback'].map(s => db.getAll(s)));
+  return {boards: boards as Board[], pins: pins as Pin[], feedback: feedback as Feedback[]};
+}
+export async function libraryZip() {
+  const data = await rawLibrary();
+  const files: Record<string, Uint8Array> = {};
+  const mime: Record<string, string> = {};
+  for (const p of data.pins)
+    if (p.file_ref && !files['images/' + p.file_ref]) {
+      const blob = await file(p.file_ref);
+      if (blob) {
+        files['images/' + p.file_ref] = new Uint8Array(await blob.arrayBuffer());
+        mime[p.file_ref] = blob.type;
+      }
+    }
+  files['library.json'] = strToU8(
+    JSON.stringify({format: 'studio-wall-library', version: 1, exported_at: new Date().toISOString(), ...data, mime}),
+  );
+  return {
+    zip: zipSync(files, {level: 0}),
+    counts: {boards: data.boards.filter(b => !b.deleted_at).length, pins: data.pins.filter(p => !p.deleted_at).length},
+  };
+}
 // Whole-library backup: every board, reference, image and comment, including deletions so another device can mirror them.
-export async function exportLibrary(){const {zip,counts}=await libraryZip();const name='studio-wall-library-'+new Date().toISOString().slice(0,10)+'.zip';const blob=new Blob([zip as BlobPart],{type:'application/zip'});
- const shareFile=typeof File==='function'?new File([blob],name,{type:'application/zip'}):null;
- if(shareFile&&navigator.canShare?.({files:[shareFile]})&&matchMedia('(pointer:coarse)').matches){try{await navigator.share({files:[shareFile],title:'Studio Wall library'});return counts;}catch(e){if((e as Error).name==='AbortError')return counts;}}
- const url=URL.createObjectURL(blob);const link=document.createElement('a');link.href=url;link.download=name;link.click();setTimeout(()=>URL.revokeObjectURL(url),5000);return counts;}
-export async function importLibraryFiles(files:Record<string,Uint8Array>){const data=JSON.parse(strFromU8(files['library.json']));if(data.format!=='studio-wall-library'||data.version!==1)throw Error('This library backup is not supported.');
- const blobs:Record<string,Blob>={};for(const [path,bytes] of Object.entries(files))if(path.startsWith('images/')){const ref=path.slice(7);blobs[ref]=new Blob([bytes as BlobPart],{type:data.mime?.[ref]||'image/webp'});}
- return (await action({type:'library.merge',payload:{boards:data.boards,pins:data.pins,feedback:data.feedback},blobs})).counts as {boards:number;pins:number;feedback:number;images:number};}
+export async function exportLibrary() {
+  const {zip, counts} = await libraryZip();
+  const name = 'studio-wall-library-' + new Date().toISOString().slice(0, 10) + '.zip';
+  const blob = new Blob([zip as BlobPart], {type: 'application/zip'});
+  const shareFile = typeof File === 'function' ? new File([blob], name, {type: 'application/zip'}) : null;
+  if (shareFile && navigator.canShare?.({files: [shareFile]}) && matchMedia('(pointer:coarse)').matches) {
+    try {
+      await navigator.share({files: [shareFile], title: 'Studio Wall library'});
+      return counts;
+    } catch (e) {
+      if ((e as Error).name === 'AbortError') return counts;
+    }
+  }
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement('a');
+  link.href = url;
+  link.download = name;
+  link.click();
+  setTimeout(() => URL.revokeObjectURL(url), 5000);
+  return counts;
+}
+export async function importLibraryFiles(files: Record<string, Uint8Array>) {
+  const data = JSON.parse(strFromU8(files['library.json']));
+  if (data.format !== 'studio-wall-library' || data.version !== 1) throw Error('This library backup is not supported.');
+  const blobs: Record<string, Blob> = {};
+  for (const [path, bytes] of Object.entries(files))
+    if (path.startsWith('images/')) {
+      const ref = path.slice(7);
+      blobs[ref] = new Blob([bytes as BlobPart], {type: data.mime?.[ref] || 'image/webp'});
+    }
+  return (
+    await action({
+      type: 'library.merge',
+      payload: {boards: data.boards, pins: data.pins, feedback: data.feedback},
+      blobs,
+    })
+  ).counts as {boards: number; pins: number; feedback: number; images: number};
+}
 // Accepts either a whole-library backup or a single-board export.
-export async function importAny(blob:Blob){if(blob.size>MAX_IMPORT)throw Error('Please import a ZIP smaller than 500 MB.');const files=unzipSync(new Uint8Array(await blob.arrayBuffer()));if(files['library.json'])return {kind:'library' as const,counts:await importLibraryFiles(files)};if(files['board.json'])return {kind:'board' as const,board:await importBoard(blob)};throw Error('Choose a Studio Wall backup or board export.');}
+export async function importAny(blob: Blob) {
+  if (blob.size > MAX_IMPORT) throw Error('Please import a ZIP smaller than 500 MB.');
+  const files = unzipSync(new Uint8Array(await blob.arrayBuffer()));
+  if (files['library.json']) return {kind: 'library' as const, counts: await importLibraryFiles(files)};
+  if (files['board.json']) return {kind: 'board' as const, board: await importBoard(blob)};
+  throw Error('Choose a Studio Wall backup or board export.');
+}
