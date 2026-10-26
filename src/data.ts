@@ -36,7 +36,8 @@ export async function action(a:Action){
  const localInbox=(await boards.getAll()).find(x=>x.name==='Inbox'&&!x.deleted_at);const remap=new Map<string,string>();const counts={boards:0,pins:0,feedback:0,images:0,skipped:0};
  // Sync merges are lenient: one bad record or a not-yet-available image must not block everything else.
  const lenient=p.lenient===true;
- const newer=async(store:any,r:any)=>{const cur=await store.get(r.id);return !cur||Date.parse(r.updated_at)>Date.parse(cur.updated_at);};
+ // Studio sync (src/studio.ts) has already decided the studio's copy wins, so it skips the newer-wins check.
+ const newer=async(store:any,r:any)=>{if(p.studio===true)return true;const cur=await store.get(r.id);return !cur||Date.parse(r.updated_at)>Date.parse(cur.updated_at);};
  for(const r of incoming.boards){if(!okId(r?.id)||typeof r.name!=='string'||!r.name.trim()||!okTime(r.updated_at)){if(lenient){counts.skipped++;continue;}throw Error('This backup contains an invalid board.');}
  if(r.name==='Inbox'&&localInbox&&r.id!==localInbox.id){remap.set(r.id,localInbox.id);continue;}
  if(await newer(boards,r)){await boards.put({...r,studio_id:STUDIO,description:String(r.description||''),visibility:'private',cover_pin_id:okId(r.cover_pin_id)?r.cover_pin_id:null,position:Number(r.position)||0});counts.boards++;}}
