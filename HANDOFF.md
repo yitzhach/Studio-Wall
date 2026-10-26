@@ -3,6 +3,7 @@
 Updated: 2026-10-26. Start here in a new chat; no old conversation is needed.
 
 ## Current state (2026-10-26) — read this first
+- **Open item (do this first in the next chat): Art-Talk-Back #43 isn't merged.** It is docs only (stage 1 shipped notes; stage 3 decisions D-087…D-089, phase-5-studio-wall.md, HANDOFF, CHANGELOG) plus a new `studio-wall` CI job. Nothing in production waits on it. GitHub blocks it because the required `show-tracker` check failed 3 times in its pull-request run (run 205; it passed in the push run 204 of the same commit and 3/3 locally). The hang is in yitzhach/art-show-tracker's `e2e/two-devices.cjs` at line 325 (`await sync(two)` right after "an edit made mid-sync"): device 2 stays `syncing` with 1 pending. Likely cause: the test calls `page.unroute` while a held `/v1/sync/pull` may still be in its route handler. Proposed fix (in that repo): `await two.page.unrouteAll({ behavior: 'wait' })` in place of the `unroute` calls in that step and the next one. Needs art-show-tracker added to the session (add_repo with push access); then run its e2e against an Art-Talk-Back checkout, open its PR, merge, and re-run #43's CI (the job tests art-show-tracker's `main` unless a branch named like #43's exists there).
 - **Stage 3 of the backend move (2026-10-26): studio sign-in and studio sync, built behind a per-device switch.** Old sync stays the default, so nothing changes until the user switches a device in **Studio account** (sidebar, or Back up / move devices → Studio account on a phone). See "Latest update". Shipping state is in "Latest update" → Shipped.
 - **Backend move, stages 1–2 (2026-10-24), both in production:** Stage 1 (boards, cards and comments in studio-api) is Art-Talk-Back #42, deployed by "Deploy production API" run 155 with migration 0008. Stage 2 (this repo: `API` service binding → `studio-api`, `/v1/*` forwarded) is #25. Nothing changes for the user yet: the app still syncs through `/api/sync`. See "Latest update".
 - **Merging:** the user allows the agent to merge its own PRs once tests and build pass (2026-10-22). Main deploys automatically.
@@ -84,6 +85,10 @@ Device test results: <paste what worked / what didn't, or "not tested yet">
 The device with my whole library: <desktop / phone>
 
 This round:
+0. Land Art-Talk-Back #43 (docs + studio-wall CI job): its show-tracker check
+   is red from a flaky art-show-tracker e2e test (HANDOFF "Current state",
+   first item). Add yitzhach/art-show-tracker to the session, fix the test,
+   ship it, then get #43 green and merge it.
 1. Fix anything my device tests found.
 2. Build Stage 4 of docs/backend-and-ai-plan.md in Studio-Wall: "Import my
    library to the studio" in Studio account (src/studio.ts already syncs;
@@ -111,7 +116,7 @@ I may not be able to test on devices; list what I should try when I can.
 - **Offline service worker:** `/v1/*` is never cached (scripts/sw.mjs), like `/api/*`; it would otherwise have replayed old sync pulls and sign-in answers offline. The two-device run keeps the service worker on.
 - **Tests:** `src/studio.test.ts` (13: mapping, scope, Inbox, conflicts, deletes and restores, refusals). `tests/two-devices.mjs` (`npm run test:devices`, 36 checks): the built app + its Worker + the real studio-api under `wrangler dev` from an Art-Talk-Back checkout; desktop and a 390 px phone; signed out → no `/v1` and no studio chunk; sign-in; switch; board + idea + picture + comment up; phone gets them (picture opens), shares the Inbox, no sideways scroll; edits both ways; offline edit and new card after reconnect; conflict and review card; board delete and restore with its cards; sign-out keeps the boards. `SHOTS=<dir>` saves panel screenshots.
 - **CI (new):** `.github/workflows/ci.yml`, job `check`: `npm test`, build, `src/vendor/studio-sdk.js` against the platform's `bundle:esm --check`, then the two-device run with the network cut (like booth-studio). Art-Talk-Back got a matching `studio-wall` job. `playwright` 1.56.1 is a dev dependency.
-- **Shipped 2026-10-26:** PR #27 merged (`c52854f`). Workers Builds on main succeeded (build `f79ba18d`). The live site's `main-BGIpcUyD.js` has the Studio account button and its `studio-CVpRMSjl.js` chunk has the studio sync code (checked by fetching the deployed assets). The PR's own preview builds failed as they always do here (no `previews` block). Platform side: Art-Talk-Back #43 (docs, D-087…D-089, `studio-wall` CI job) is open; its `show-tracker` check failed twice in the pull-request run (it passed in the push run and locally); that looks like a race in art-show-tracker's e2e test (`page.unroute` while a pull is held), not this change. The user was told.
+- **Shipped 2026-10-26:** PR #27 merged (`c52854f`). Workers Builds on main succeeded (build `f79ba18d`). The live site's `main-BGIpcUyD.js` has the Studio account button and its `studio-CVpRMSjl.js` chunk has the studio sync code (checked by fetching the deployed assets). The PR's own preview builds failed as they always do here (no `previews` block). Platform side: Art-Talk-Back #43 (docs, D-087…D-089, `studio-wall` CI job) is open; its `show-tracker` check failed 3 times in the pull-request run (it passed in the push run and locally); see the open item at the top of "Current state".
 
 ## Previous update — Stages 1 and 2 of the backend move (2026-10-24)
 - Device tests: none this round ("not tested yet"), so there was nothing to fix.
