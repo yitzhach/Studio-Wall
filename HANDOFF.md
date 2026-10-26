@@ -3,7 +3,8 @@
 Updated: 2026-10-26. Start here in a new chat; no old conversation is needed.
 
 ## Current state (2026-10-26) — read this first
-- **Open item (do this first in the next chat): Art-Talk-Back #43 isn't merged.** It is docs only (stage 1 shipped notes; stage 3 decisions D-087…D-089, phase-5-studio-wall.md, HANDOFF, CHANGELOG) plus a new `studio-wall` CI job. Nothing in production waits on it. GitHub blocks it because the required `show-tracker` check failed 3 times in its pull-request run (run 205; it passed in the push run 204 of the same commit and 3/3 locally). The hang is in yitzhach/art-show-tracker's `e2e/two-devices.cjs` at line 325 (`await sync(two)` right after "an edit made mid-sync"): device 2 stays `syncing` with 1 pending. Likely cause: the test calls `page.unroute` while a held `/v1/sync/pull` may still be in its route handler. Proposed fix (in that repo): `await two.page.unrouteAll({ behavior: 'wait' })` in place of the `unroute` calls in that step and the next one. Needs art-show-tracker added to the session (add_repo with push access); then run its e2e against an Art-Talk-Back checkout, open its PR, merge, and re-run #43's CI (the job tests art-show-tracker's `main` unless a branch named like #43's exists there).
+- **Code clean-up in progress (2026-10-26), before Stage 4.** Approved plan, 5 PRs, no change in what the app does or how it looks. PR 1 (formatting: Prettier, `npm run format`, CI fails on unformatted code) is #30. PRs 2–5 are next: see "Latest update — clean-up". Run them in a new chat with the clean-up prompt there.
+- **Done 2026-10-26: Art-Talk-Back #43 merged** (docs + `studio-wall` CI job; "Deploy production API" run 163 green). Its red `show-tracker` check was art-show-tracker's e2e test removing a Playwright route while requests were in flight (that strands them in Chromium); fixed in art-show-tracker #17.
 - **Stage 3 of the backend move (2026-10-26): studio sign-in and studio sync, built behind a per-device switch.** Old sync stays the default, so nothing changes until the user switches a device in **Studio account** (sidebar, or Back up / move devices → Studio account on a phone). See "Latest update". Shipping state is in "Latest update" → Shipped.
 - **Backend move, stages 1–2 (2026-10-24), both in production:** Stage 1 (boards, cards and comments in studio-api) is Art-Talk-Back #42, deployed by "Deploy production API" run 155 with migration 0008. Stage 2 (this repo: `API` service binding → `studio-api`, `/v1/*` forwarded) is #25. Nothing changes for the user yet: the app still syncs through `/api/sync`. See "Latest update".
 - **Merging:** the user allows the agent to merge its own PRs once tests and build pass (2026-10-22). Main deploys automatically.
@@ -85,10 +86,6 @@ Device test results: <paste what worked / what didn't, or "not tested yet">
 The device with my whole library: <desktop / phone>
 
 This round:
-0. Land Art-Talk-Back #43 (docs + studio-wall CI job): its show-tracker check
-   is red from a flaky art-show-tracker e2e test (HANDOFF "Current state",
-   first item). Add yitzhach/art-show-tracker to the session, fix the test,
-   ship it, then get #43 green and merge it.
 1. Fix anything my device tests found.
 2. Build Stage 4 of docs/backend-and-ai-plan.md in Studio-Wall: "Import my
    library to the studio" in Studio account (src/studio.ts already syncs;
@@ -100,6 +97,41 @@ This round:
 4. Ask me before anything that needs my decision, money, secrets, a new
    Worker's first deploy, or deleting data.
 I may not be able to test on devices; list what I should try when I can.
+```
+
+## Latest update — clean-up (2026-10-26, in progress)
+Goal: code that is easier to read and change, with **no** change in behaviour or looks (owner app, `/s/<token>`, old sync, studio sync, Worker). Approved by the user, including: CI fails on unformatted code; `docs/CODEX_START.md` may be deleted.
+- **Step 0, done:** art-show-tracker #17 (e2e holds pulls with one route that is never removed) → Art-Talk-Back #43 green and merged.
+- **PR 1, #30 — formatting only.** Prettier 3.9.10 (`.prettierrc.json`: 120 cols, single quotes), `npm run format` / `format:check`, CI step. `src/vendor/` ignored; `index.html`, `share.html`, `tests/` not formatted. Proof: built JS byte-identical to the old build (bar build time), minified Worker bundle identical, CSS differs only by the space in `--var: x`.
+- **PR 2 — dead code and duplicate helpers.** One `esc()` (now in main.ts, share.ts, markup.ts, studio.ts → e.g. `src/html.ts`; the Worker keeps its own); one `isHttpUrl` (the `https?://` regex is repeated in data.ts ×4, backup.ts, main.ts); unused `selected` in main.ts, unused `Session` import in studio.ts, unused `req` in worker/index.ts (~line 310 before formatting); then `noUnusedLocals`/`noUnusedParameters` in tsconfig.json.
+- **PR 3 — data.ts:** split `action()`'s if/else chain into one function per action type in a lookup table; the transaction, undo history, activity log and outbox stay in `action()` unchanged. Add tests for actions without one.
+- **PR 4 — main.ts:** break the long HTML templates into named pieces (sidebar, header, toolbar, grid, conversation), then split by area: shared state, render, focus/card dialog, save dialog, board/share/transfer dialogs, library/recently deleted. Proof: a before/after browser comparison of ~15 screens and dialogs (desktop and 390 px, dark and light): page HTML and screenshots must match the old build.
+- **PR 5 — docs:** move HANDOFF's "Previous update" sections (2026-10-24 and older) word for word into `docs/history.md`; fix README (still says the app doesn't sync); delete `docs/CODEX_START.md`; close this update and check the Stage 4 prompt.
+- **Leave alone (formatting only):** worker routes, `src/sync.ts`, `src/share.ts` (they move to studio-api in Stages 5–6), `src/studio.ts` (Stage 4 builds on it). Never touch `wrangler.jsonc`, `src/vendor/`, `.openai/`.
+- **Each PR:** `npm run format:check`, `npm test`, `npm run build`, `npm run test:devices` (`STUDIO_PLATFORM=../Art-Talk-Back`, after `pnpm install` there; in the cloud sandbox add `STUDIO_WALL_CHROMIUM=/opt/pw-browsers/chromium`). Compare the build with main's: for PRs 2–3 the built JS should be identical or explainably different. Merge when CI `check` is green; verify the live assets after each merge.
+
+**Prompt for the clean-up chat (PRs 2–5):**
+
+```
+Continue the Studio Wall code clean-up. Repos: yitzhach/Studio-Wall (main
+deploys to Cloudflare on merge) and yitzhach/Art-Talk-Back (default branch
+claude/next-steps-y4vrwv; only for the two-device test).
+Read Studio-Wall HANDOFF.md: "Current state" and "Latest update — clean-up"
+(the approved plan), and AGENTS.md. Skim src/ and worker/.
+Goal: easier code with NO change in what the app does or how it looks.
+Do PRs 2, 3, 4, 5 in that order, one at a time. Each must pass
+format:check, npm test, npm run build and npm run test:devices before you
+merge it; prove "no change" as the plan says (build comparison, and for PR 4
+the before/after screen comparison). Add tests where logic isn't covered.
+Keep AGENTS.md's rules (action() for writes, Dark Gallery + light mode,
+390 px phones, no client passwords stored, copy keeps credits and images,
+batch all-or-nothing). Don't touch wrangler.jsonc or src/vendor/.
+Merge your own PRs once CI's check is green (Cloudflare preview builds
+always fail here; ignore them) and verify each deploy by the live assets.
+Finish PR 5 by updating HANDOFF so "Current state" and the Stage 4 prompt
+are correct. Ask me before anything that changes behaviour or looks, needs
+my decision, money or secrets, or deletes data. Then tell me what changed
+and what to try on my devices.
 ```
 
 ## Latest update — Stage 3: studio sign-in and studio sync (2026-10-26)
