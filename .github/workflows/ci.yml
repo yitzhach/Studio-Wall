@@ -1,0 +1,65 @@
+name: CI
+
+# Studio Wall's checks. Nothing deploys from here: `main` is production through
+# Cloudflare's Workers Builds (HANDOFF.md).
+#
+# One job, `check`: the unit tests, the build, the vendored SDK against the
+# platform, and the two-device run against a local studio-api from
+# yitzhach/Art-Talk-Back (its branch of the same name if there is one, else its
+# default branch: Art-Talk-Back D-056). The two-device step points the browser
+# at a dead proxy, so it passes with no internet; loopback bypasses it.
+on:
+  pull_request:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.event.pull_request.number && format('pr-{0}', github.event.pull_request.number) || github.run_id }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - name: Pick the platform branch
+        id: platform
+        run: |
+          ref="${GITHUB_HEAD_REF:-$GITHUB_REF_NAME}"
+          if git ls-remote --exit-code --heads https://github.com/yitzhach/Art-Talk-Back "$ref" >/dev/null 2>&1; then
+            echo "ref=$ref" >> "$GITHUB_OUTPUT"
+          else
+            echo "ref=" >> "$GITHUB_OUTPUT"
+          fi
+      - uses: actions/checkout@v4
+        with:
+          repository: yitzhach/Art-Talk-Back
+          ref: ${{ steps.platform.outputs.ref }}
+          path: .studio-platform
+      - uses: pnpm/action-setup@v4
+        with:
+          package_json_file: .studio-platform/package.json
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - name: Unit tests
+        run: npm test
+      - run: npm run build
+      - name: Studio platform (wrangler + studio-api)
+        working-directory: .studio-platform
+        run: pnpm install --frozen-lockfile
+      - name: src/vendor/studio-sdk.js matches the platform's SDK
+        working-directory: .studio-platform
+        run: pnpm --filter @studio/sdk bundle:esm --check --out "$GITHUB_WORKSPACE/src/vendor/studio-sdk.js"
+      - name: Chromium
+        run: npx playwright install --with-deps chromium
+      - name: Two devices, offline, against studio-api
+        env: { HTTPS_PROXY: "http://127.0.0.1:9", HTTP_PROXY: "http://127.0.0.1:9", NO_PROXY: "127.0.0.1,localhost", STUDIO_PLATFORM: .studio-platform }
+        run: node tests/two-devices.mjs

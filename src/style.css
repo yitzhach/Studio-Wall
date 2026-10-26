@@ -68,3 +68,10 @@
 /* Touch screens: fields under 16px make iPhone/iPad Safari zoom the page on focus. */
 @media(pointer:coarse){input:not([type=checkbox]),select,textarea,.search input{font-size:16px}}
 @media(max-width:760px){.share-actions button{min-height:40px;padding:8px 12px}}
+/* Studio account (src/studio.ts) */
+.studio-mode,.studio-review{margin:6px 0 18px}
+.studio-mode h3,.studio-review h3{font-size:15px;margin:0 0 10px}
+.studio-choice{display:flex;gap:10px;align-items:flex-start;font-size:13px;line-height:1.6;letter-spacing:0;font-weight:400;color:var(--text);margin:0 0 10px}
+.studio-choice input{width:auto;flex:none;margin-top:4px}
+.studio-review article{padding:12px 14px;border:1px solid var(--line);border-radius:6px;margin:0 0 10px;font-size:13px}
+#modal [hidden]{display:none!important}
