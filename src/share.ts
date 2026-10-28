@@ -2,6 +2,7 @@
 import './style.css';
 import {openGallery} from './viewer';
 import type {Pin} from './data';
+import {esc} from './text';
 import {IMAGE_ACCEPT, optimizeImage, palette} from './media';
 type SharedPin = {
   id: string;
@@ -27,8 +28,6 @@ type Shared = {
 const root = document.querySelector<HTMLElement>('#share')!;
 const MAX_IMAGES = 10;
 const token = location.pathname.split('/')[2] || '';
-const esc = (s: unknown) =>
-  String(s ?? '').replace(/[&<>"']/g, c => ({'&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'})[c]!);
 const store = {
   get: (k: string) => {
     try {

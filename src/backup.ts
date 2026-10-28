@@ -1,5 +1,6 @@
 import {zipSync, unzipSync, strToU8, strFromU8} from 'fflate';
 import {snapshot, file, action, database, type Board, type Pin, type Feedback} from './data';
+import {isHttpUrl} from './text';
 export async function exportBoard(board: Board) {
   const pins = (await snapshot()).pins.filter(p => p.board_id === board.id);
   const files: Record<string, Uint8Array> = {};
@@ -41,7 +42,7 @@ export async function importBoard(blob: Blob) {
       !p.tags.every((t: unknown) => typeof t === 'string') ||
       !Array.isArray(p.palette) ||
       !p.palette.every((c: unknown) => typeof c === 'string' && /^#[0-9a-f]{6}$/i.test(c)) ||
-      (p.source_url && !/^https?:\/\//i.test(p.source_url)) ||
+      (p.source_url && !isHttpUrl(p.source_url)) ||
       (p.file_ref && !files['images/' + p.file_ref])
     )
       throw Error('This board contains invalid or missing data.');

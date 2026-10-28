@@ -1,5 +1,6 @@
 import {openDB} from 'idb';
 import {ulid} from 'ulid';
+import {isHttpUrl} from './text';
 export type Base = {
   id: string;
   studio_id: string;
@@ -213,7 +214,7 @@ export async function action(a: Action) {
           !r.tags.every((t: unknown) => typeof t === 'string') ||
           !Array.isArray(r.palette) ||
           !r.palette.every((c: unknown) => typeof c === 'string' && /^#[0-9a-f]{6}$/i.test(c)) ||
-          (r.source_url && !/^https?:\/\//i.test(r.source_url)) ||
+          (r.source_url && !isHttpUrl(r.source_url)) ||
           (r.file_ref !== null && !okId(r.file_ref))
         ) {
           if (lenient) {
@@ -295,7 +296,7 @@ export async function action(a: Action) {
       for (const src of p.pins) {
         const blob = src.file_ref ? a.blobs?.[src.file_ref] : undefined;
         if (src.file_ref && !blob) throw Error('This board contains invalid or missing data.');
-        if (src.source_url && !/^https?:\/\//i.test(src.source_url)) throw Error('Use a complete http or https link.');
+        if (src.source_url && !isHttpUrl(src.source_url)) throw Error('Use a complete http or https link.');
         const file_ref = blob ? ulid() : null;
         const pin = {
           ...base(),
@@ -407,7 +408,7 @@ export async function action(a: Action) {
         const board = await tx.objectStore('boards').get(q.board_id);
         if (!board || board.deleted_at) throw Error('Choose an existing board.');
         if (!blob && !q.source_url && !q.note?.trim()) throw Error('Add an image, link or idea.');
-        if (q.source_url && !/^https?:\/\//i.test(q.source_url)) throw Error('Use a complete http or https link.');
+        if (q.source_url && !isHttpUrl(q.source_url)) throw Error('Use a complete http or https link.');
         const pin = {
           ...base(),
           board_id: q.board_id,
@@ -545,8 +546,7 @@ export async function action(a: Action) {
           'annotations',
         ])
           if (p[k] !== undefined) result[k] = p[k];
-        if (result.source_url && !/^https?:\/\//i.test(result.source_url))
-          throw Error('Use a complete http or https link.');
+        if (result.source_url && !isHttpUrl(result.source_url)) throw Error('Use a complete http or https link.');
         if (p.title !== undefined) result.meta.title = p.title;
       } else throw Error('Unknown action');
       result.updated_at = b.updated_at;

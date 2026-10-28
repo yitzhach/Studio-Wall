@@ -102,9 +102,8 @@ import {
   type Permission,
 } from './sync';
 import {studioSyncOn} from './studio-session';
+import {esc, isHttpUrl} from './text';
 const root = document.querySelector<HTMLDivElement>('#app')!;
-const esc = (s: unknown) =>
-  String(s ?? '').replace(/[&<>"']/g, c => ({'&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'})[c]!);
 const buildDate = new Date(__BUILD_TIME__);
 const buildVersion =
   'v' + __BUILD_TIME__.slice(0, 10).replaceAll('-', '.') + '-' + __BUILD_TIME__.slice(11, 16).replace(':', '');
@@ -122,8 +121,7 @@ let state: Awaited<ReturnType<typeof snapshot>>,
   query = '',
   filter = 'all',
   pickClient = '',
-  client = false,
-  selected: Pin | null = null;
+  client = false;
 const urls = new Map<string, string>();
 let picked: File | undefined;
 let selecting = false;
@@ -466,7 +464,6 @@ function saveDialog(files?: File[], mode: 'image' | 'idea' | 'link' = 'image') {
   };
 }
 function focusPin(p: Pin) {
-  selected = p;
   const position = visiblePins.findIndex(x => x.id === p.id);
   const d = show(
     `<nav class="focus-toolbar" aria-label="Reference navigation"><button id="back-board">${icon('arrow-left')} Back to board</button><div><button id="prev-pin" aria-label="Previous reference" ${position <= 0 ? 'disabled' : ''}>${icon('chevron-left')}</button><span>${position + 1} / ${visiblePins.length}</span><button id="next-pin" aria-label="Next reference" ${position >= visiblePins.length - 1 ? 'disabled' : ''}>${icon('chevron-right')}</button></div><button id="jump-comments">${icon('message-circle')} Comments</button>${!client ? `<div class="quick-board-save"><select id="save-board" aria-label="Save a copy to board">${options(p.board_id)}</select><button id="quick-save-pin" class="primary">Save a copy</button></div>` : ''}</nav><div class="focus-layout"><div class="focus-image"><div class="image-controls"><button id="zoom-out" aria-label="Zoom out">−</button><button id="zoom-fit">Fit</button><button id="zoom-in" aria-label="Zoom in">+</button><button id="open-gallery">Expand gallery</button></div><div class="image-scroll">${image(p) ? `<div class="annotated-image"><img src="${image(p)}" alt="${esc(p.meta.title || 'Saved reference')}">${annotationOverlay(p.annotations || [])}</div>` : `<blockquote>${esc(p.note || p.source_url)}</blockquote>`}</div></div><div class="inspector"><div class="eyebrow">SAVED INSPIRATION</div><h2>${esc(p.meta.title || 'A reference to return to')}</h2>${chips(p)}<form id="edit-form"><label>Title<input name="title" value="${esc(p.meta.title)}"></label><label>Board<select name="board_id">${options(p.board_id)}</select></label><label>Notes<textarea name="note" rows="4">${esc(p.note)}</textarea></label><label>Tags<input name="tags" value="${esc(p.tags.join(', '))}"></label><div class="source-block"><h3>Source & credit</h3><label>Creator / source<input name="source_credit" value="${esc(p.source_credit)}"></label><label>Original link<input name="source_url" type="url" value="${esc(p.source_url)}"></label>${p.source_url ? `<a href="${esc(p.source_url)}" target="_blank" rel="noopener noreferrer">View original ${icon('external-link')}</a>` : ''}<label class="checkbox"><input type="checkbox" name="is_own" ${p.is_own ? 'checked' : ''}> My own work</label></div><p class="error" role="alert"></p><button class="primary submit">Save changes</button></form><div class="pin-actions">${image(p) ? `<button id="markup-pin">${icon('pencil')} Mark up / annotate${p.annotations?.length ? ` · ${p.annotations.length}` : ''}</button>` : ''}<button id="organize-pin">${icon('panels-top-left')} Copy / move to board</button><button id="cover">${icon('image')} Use as board cover</button><button id="delete-pin" class="danger">${icon('trash-2')} Delete reference</button></div></div></div>`,
@@ -1292,7 +1289,7 @@ document.addEventListener('paste', e => {
     saveDialog(fs);
   } else {
     const text = e.clipboardData?.getData('text/plain');
-    if (text && /^https?:\/\//i.test(text)) {
+    if (text && isHttpUrl(text)) {
       saveDialog(undefined, 'link');
       document.querySelector<HTMLInputElement>('[name=source_url]')!.value = text;
     }
