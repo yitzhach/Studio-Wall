@@ -1,6 +1,6 @@
 # Studio Wall
 
-Dark-first, device-local inspiration boards for artists, with a matching light theme and client mood-board preview.
+Dark-first inspiration boards for artists, with a matching light theme. Every device keeps a full copy of the library, syncs with the artist's other devices, and can share boards with clients through links.
 
 ## Run
 
@@ -9,9 +9,11 @@ npm ci
 npm run dev
 npm test
 npm run build
+npm run format          # Prettier; CI fails on unformatted code
+npm run test:devices    # two devices against a local studio-api (needs an Art-Talk-Back checkout; see the script)
 ```
 
-Deploy `dist/` to static hosting over HTTPS. For Cloudflare Workers Static Assets, use the included `wrangler.jsonc` when you are ready to connect your own Cloudflare account. No backend, keys, or database binding is required for this prototype. The `.openai/hosting.json` identifies the separate private review deployment; GitHub remains the working code handoff.
+Live at https://studio-wall.bobdylan2000.workers.dev, behind Cloudflare Access: the Worker `studio-wall` (`worker/index.ts`, `wrangler.jsonc`) serves `dist/`, old sync and client links. Pushing to `main` deploys it (Workers Builds). See `HANDOFF.md` for the current state. `.openai/hosting.json` identifies the separate private review deployment; GitHub remains the working code handoff.
 
 ## Working now
 
@@ -25,18 +27,19 @@ Deploy `dist/` to static hosting over HTTPS. For Cloudflare Workers Static Asset
 - Mouse selection boxes from grid whitespace, optional Select-mode circles, Cmd/Ctrl-click toggles, Shift-click ranges and atomic bulk copy/move; desktop group drag/drop onto boards.
 - Detail zoom and a dark full-window image carousel with arrow navigation, touch swipe and optional native fullscreen.
 - Present / PDF for the visible collection or selected references; print/save PDF and attach it to email. Image notes are excluded; text references and credits are included.
-- Local preview of client stars and per-image notes, plus a Starred filter. No cross-device feedback yet.
-- Saved public/private/password sharing preferences are demo-only; no passwords stored.
-- Client view preview and local board comments. Real sharing is intentionally unavailable.
+- Sync between the artist's devices: old sync through the Worker (`src/sync.ts`, D1 + R2), or studio sync through studio-api (`src/studio.ts`), chosen per device in Studio account.
+- Client links (`/s/<token>`, `src/share.ts`): view, star, comment or add cards; optional password, expiry, chosen cards only. Client picks and client news in the owner app.
+- Recently deleted (30 days), iPhone Shortcut capture (`docs/SHARING_AND_CAPTURE.md`), photo metadata stripped on the server.
+- Local client preview of a board on this device.
 
 ## Boundaries
 
-The app saves on one browser/device. It does not sync. A URL is a bookmark, not a remote image downloader. All palette extraction needs a browser-decodable image. HEIC support depends on browser decoding. No Web Share Target receiver is shipped; validate iPhone and Android support before adding it. Test installation, camera permissions and offline reopening on real devices. A mocked DOM integration test is not real browser/phone QA.
+Each browser keeps its own full copy in IndexedDB; sync and client links need the Worker (and, for studio sync, studio-api from yitzhach/Art-Talk-Back). A URL is a bookmark, not a remote image downloader. All palette extraction needs a browser-decodable image. HEIC support depends on browser decoding. No Web Share Target receiver is shipped; validate iPhone and Android support before adding it. Test installation, camera permissions and offline reopening on real devices. A mocked DOM integration test is not real browser/phone QA.
 
-`src/data.ts` is the local repository boundary. `action()` commits domain state, file blobs, activity, and outbox in one IndexedDB transaction. Studio/actor identity is local-only and not authentication. The outbox is a future integration seam, NOT a finalized sync contract. Keep shared asset identifiers opaque and server-authorize board access. See `docs/plan.md` and `HANDOFF.md`.
+`src/data.ts` is the local repository boundary: `action()` commits domain state, file blobs, activity and outbox in one IndexedDB transaction, one function per action type. The owner app is `src/main.ts` (wiring) and `src/app/` (state, rendering, dialogs, sync status). See `docs/backend-and-ai-plan.md` and `HANDOFF.md`.
 
 ## Sample image
 
 `public/sample-plaster.webp` was generated for this prototype; it is labeled AI-generated when added. Prompt: a standalone vertical photographic material study of weathered pale turquoise lime plaster over warm ochre/copper strata, no interface or text. The optional sample board is loaded only when selected.
 
-For a new Codex session, read AGENTS.md and docs/CODEX_START.md.
+For a new session, read AGENTS.md and HANDOFF.md.
