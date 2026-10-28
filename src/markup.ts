@@ -1,7 +1,6 @@
 import type {Annotation} from './data';
+import {esc} from './text';
 
-const esc = (s: string) =>
-  s.replace(/[&<>"']/g, c => ({'&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'})[c]!);
 const point = (e: PointerEvent, svg: SVGSVGElement) => {
   const r = svg.getBoundingClientRect();
   return {

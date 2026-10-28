@@ -773,7 +773,7 @@ async function shareApi(req: Request, env: Env, url: URL, token: string, rest: s
 }
 
 /** The client page, with link-preview tags (iMessage, email, social) filled in for active links. */
-async function sharePage(req: Request, env: Env, url: URL, token: string) {
+async function sharePage(env: Env, url: URL, token: string) {
   // Static hosting serves share.html at /share (it redirects the .html form).
   const page = await env.ASSETS.fetch(new Request(new URL('/share', url)));
   let html = await page.text();
@@ -821,7 +821,7 @@ export default {
     if (url.pathname.startsWith('/v1/')) return forwardToStudio(req, env);
     try {
       const page = url.pathname.match(/^\/s\/([A-Za-z0-9_-]{32,64})\/?$/);
-      if (page) return await sharePage(req, env, url, page[1]);
+      if (page) return await sharePage(env, url, page[1]);
       if (url.pathname.startsWith('/api/')) {
         if (!env.DB || !env.FILES || !env.ACCESS_TEAM_DOMAIN || !env.ACCESS_AUD)
           return json({error: 'Sync is not configured.'}, 503);

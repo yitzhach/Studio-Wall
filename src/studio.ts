@@ -18,7 +18,8 @@
 // exists on the server, attached to it, and come down by signed link into the device's files.
 import {ApiError, Studio} from './vendor/studio-sdk.js';
 import {database, action, file, changes} from './data';
-import {readSession, writeSession, type Session} from './studio-session';
+import {readSession, writeSession} from './studio-session';
+import {esc} from './text';
 
 export type Type = 'board' | 'pin' | 'feedback';
 type Rec = Record<string, any>;
@@ -329,8 +330,6 @@ const writeState = (s: SyncState | null) => {
     else localStorage.removeItem(STATE_KEY);
   } catch {}
 };
-const esc = (s: unknown) =>
-  String(s ?? '').replace(/[&<>"']/g, c => ({'&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'})[c]!);
 const plural = (n: number, w: string) => `${n} ${w}${n === 1 ? '' : 's'}`;
 const label = (t: Type, r: Rec) =>
   t === 'board'
