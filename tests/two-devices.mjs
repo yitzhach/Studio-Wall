@@ -17,6 +17,9 @@
                   device gets a review card and can put its own back.
      delete       a board deleted on one device goes on the other, and Recently deleted brings it back
                   with its cards.
+     import       stage 4: "Import my library to the studio" on the desktop sends the older library, pictures
+                  and Recently deleted included; the phone ends up with the same counts, the pictures open,
+                  Recently deleted carries over and restores; a second run adds nothing.
      sign-out     signing out keeps everything on the device and goes back to old sync.
 
    The studio API lives in yitzhach/Art-Talk-Back. Point STUDIO_PLATFORM at a checkout of it with
@@ -246,8 +249,71 @@ async function editNote(d, cardText, note) {
   await d.page.click("#edit-form .submit");
   await d.page.waitForFunction(() => !document.querySelector("#modal")?.open);
 }
+async function addPicture(d, title) {
+  await d.page.click(visible(".header-actions [data-action=save]"));
+  await d.page.click("[data-kind=image]");
+  await d.page.setInputFiles("#upload", { name: "gradient.png", mimeType: "image/png", buffer: png() });
+  await d.page.fill("#save-form [name=title]", title);
+  await d.page.click("#save-form .submit");
+  await d.page.waitForFunction(() => !document.querySelector("#modal")?.open);
+}
+async function newBoard(d, name) {
+  await d.page.click(visible("[data-action=new-board]"));
+  await d.page.fill("#modal [name=name]", name);
+  await d.page.click("#modal .submit");
+  await d.page.waitForSelector(`.topline h1:has-text("${name}")`);
+}
+async function deleteBoard(d) {
+  await d.page.click(visible("[data-action=board-menu]"));
+  await d.page.click("#delete-board");
+  await d.page.waitForFunction(() => !document.querySelector("#modal")?.open);
+}
+async function openTrash(d) {
+  if (d.phone) {
+    await d.page.click(visible(".mobile-brand [data-action=library]"));
+    await d.page.click("#open-trash");
+  } else await d.page.click(visible("[data-action=trash]"));
+  await d.page.waitForSelector("#modal[open] .trash-list, #modal[open] .hint");
+}
 /** The studio's own records, read through the signed-in device's session (what's really in studio-api). */
 const studioList = (d, p) => d.page.evaluate(async (p) => (await (await fetch(p)).json()), p);
+/** Everything the studio holds, deleted included, per type: {live, deleted}. */
+const studioCounts = (d) =>
+  d.page.evaluate(async () => {
+    const seen = {};
+    for (let since = "0"; ; ) {
+      const page = await (await fetch(`/v1/sync/pull?since=${encodeURIComponent(since)}&limit=200`)).json();
+      for (const c of page.changes) seen[`${c.entityType}:${c.entityId}`] = c.record.deletedAt ? "deleted" : "live";
+      since = page.cursor;
+      if (!page.hasMore) break;
+    }
+    const out = {};
+    for (const [k, v] of Object.entries(seen)) {
+      const t = k.split(":")[0];
+      out[t] ||= { live: 0, deleted: 0 };
+      out[t][v]++;
+    }
+    return out;
+  });
+/** What the device itself holds (IndexedDB), per store: {live, deleted}. */
+const deviceCounts = (d) =>
+  d.page.evaluate(async () => {
+    const db = await new Promise((ok, no) => {
+      const q = indexedDB.open("studio-wall-v1");
+      q.onsuccess = () => ok(q.result);
+      q.onerror = () => no(q.error);
+    });
+    const out = {};
+    for (const s of ["boards", "pins", "feedback"]) {
+      const all = await new Promise((ok) => {
+        const q = db.transaction(s).objectStore(s).getAll();
+        q.onsuccess = () => ok(q.result);
+      });
+      out[s] = { live: all.filter((r) => !r.deleted_at).length, deleted: all.filter((r) => r.deleted_at).length };
+    }
+    db.close();
+    return out;
+  });
 
 /* ---- the run ------------------------------------------------------------------ */
 const { proc } = startServer();
@@ -260,11 +326,22 @@ try {
 
   console.log("signed out");
   await ready(A);
-  // A board made before sign-in: it stays on this device until stage 4's import.
-  await A.page.click(visible("[data-action=new-board]"));
-  await A.page.fill("#modal [name=name]", "Old board");
-  await A.page.click("#modal .submit");
-  await A.page.waitForSelector('.topline h1:has-text("Old board")');
+  // A library made before sign-in: it stays on this device until stage 4's import. A board with an idea, a picture
+  // and a comment; a deleted picture; a deleted board with two cards (one a picture).
+  await newBoard(A, "Old board");
+  await addIdea(A, "Old idea", "From before the studio");
+  await addPicture(A, "Old picture");
+  await A.page.fill("#feedback-text", "An older comment");
+  await A.page.click("#feedback-form button");
+  await A.page.waitForSelector('.feedback article:has-text("An older comment")');
+  await addPicture(A, "Deleted picture");
+  await A.page.click('.pin:has-text("Deleted picture")');
+  await A.page.click("#delete-pin");
+  await A.page.waitForFunction(() => ![...document.querySelectorAll(".pin")].some((p) => p.textContent.includes("Deleted picture")));
+  await newBoard(A, "Old deleted board");
+  await addIdea(A, "On a deleted board", "Gone with its board");
+  await addPicture(A, "Deleted with its board");
+  await deleteBoard(A);
   await A.page.reload();
   await A.page.waitForSelector(".topline h1");
   check("signed out: nothing calls /v1", A.v1.length === 0, A.v1.join(", "));
@@ -368,9 +445,7 @@ try {
   await hasCard(A, "From the phone", "gets the phone's version once it was chosen");
 
   console.log("delete");
-  await A.page.click(visible("[data-action=board-menu]"));
-  await A.page.click("#delete-board");
-  await A.page.waitForFunction(() => !document.querySelector("#modal")?.open);
+  await deleteBoard(A);
   await until(A, () => !document.body.textContent.includes("Moodboard"), null, "the board is deleted here");
   await until(B, () => !document.body.textContent.includes("Moodboard"), null, "the deleted board goes");
   await B.page.click(visible(".mobile-brand [data-action=library]"));
@@ -381,6 +456,64 @@ try {
   await until(A, () => document.body.textContent.includes("Moodboard"), null, "the restored board is back");
   await openBoard(A, "Moodboard");
   await until(A, () => document.querySelectorAll(".pin").length === 3, null, "with its three cards");
+
+  console.log("import");
+  await statusIs(B, "Studio · synced");
+  await openStudio(A);
+  check("import: the button is in Studio account", await A.page.isVisible("#st-import"));
+  const importNow = async () => {
+    await A.page.click("#st-import");
+    await A.page.waitForFunction(() => /^Done\./.test(document.querySelector("#st-import-msg")?.textContent || ""), null, { timeout: 180_000 });
+    return A.page.textContent("#st-import-msg");
+  };
+  const said = await importNow();
+  await shot(A, "imported");
+  check("import: says it's done, with counts", /In the studio: \d+ of \d+ boards, \d+ of \d+ cards, \d+ of \d+ comments/.test(said), said);
+  const inStudio = await studioCounts(A);
+  const onDesktop = await deviceCounts(A);
+  const same = (a, b) => a?.live === b?.live && a?.deleted === b?.deleted;
+  check(
+    "import: the studio has every board, card and comment on the desktop, Recently deleted included",
+    same(inStudio.board, onDesktop.boards) && same(inStudio.pin, onDesktop.pins) && same(inStudio.feedback, onDesktop.feedback),
+    JSON.stringify({ inStudio, onDesktop }),
+  );
+  check("import: the desktop's deleted things are deleted in the studio too", inStudio.board?.deleted >= 1 && inStudio.pin?.deleted >= 3, JSON.stringify(inStudio));
+  const again = await importNow();
+  check("import: a second run adds nothing", JSON.stringify(await studioCounts(A)) === JSON.stringify(inStudio), `${again} ${JSON.stringify(await studioCounts(A))}`);
+  await A.page.click("#modal .close");
+
+  await until(B, () => document.body.textContent.includes("Old board"), null, "gets the older board");
+  let counts = {};
+  for (let i = 0; i < 60; i++) {
+    counts = { desktop: await deviceCounts(A), phone: await deviceCounts(B) };
+    if (JSON.stringify(counts.desktop) === JSON.stringify(counts.phone)) break;
+    await B.page.evaluate(() => dispatchEvent(new Event("focus")));
+    await new Promise((r) => setTimeout(r, 1000));
+  }
+  check("phone: the same counts as the desktop (boards, cards, comments; live and deleted)", JSON.stringify(counts.desktop) === JSON.stringify(counts.phone), JSON.stringify(counts));
+  await openBoard(B, "Old board");
+  await hasCard(B, "From before the studio", "has the older idea card");
+  await until(B, () => [...document.querySelectorAll(".pin")].some((p) => p.textContent.includes("Old picture") && p.querySelector("img")?.complete && p.querySelector("img").naturalWidth > 0), null, "the older picture opens");
+  check("phone: has the older comment", await B.page.isVisible('.feedback article:has-text("An older comment")'));
+  check("phone: the deleted board isn't on the board list", !(await B.page.evaluate(() => [...document.querySelectorAll(".board-card")].some((b) => b.textContent.includes("Old deleted board")))));
+
+  await openTrash(B);
+  await shot(B, "recently-deleted");
+  check("phone: Recently deleted has the deleted picture and the deleted board", (await B.page.isVisible('.trash-row:has-text("Deleted picture")')) && (await B.page.isVisible('.trash-row:has-text("Old deleted board")')));
+  await until(B, () => [...document.querySelectorAll(".trash-row")].some((r) => r.textContent.includes("Deleted picture") && r.querySelector("img")?.complete && r.querySelector("img").naturalWidth > 0), null, "the deleted picture's thumbnail opens");
+  // One at a time: a sync landing meanwhile redraws the page under the dialog.
+  for (const [text, attr] of [["Deleted picture", "data-restore-pin"], ["Old deleted board", "data-restore-board"]]) {
+    if (!(await B.page.evaluate(() => document.querySelector("#modal")?.open && !!document.querySelector(".trash-list")))) await openTrash(B);
+    await B.page.click(`.trash-row:has-text("${text}") [${attr}]`);
+    await B.page.waitForFunction((t) => ![...document.querySelectorAll(".trash-row")].some((r) => r.textContent.includes(t)), text);
+  }
+  if (await B.page.evaluate(() => document.querySelector("#modal")?.open)) await B.page.click("#modal .close");
+  await openBoard(A, "Old board");
+  await hasCard(A, "Deleted picture", "gets the card restored on the phone");
+  await until(A, () => document.body.textContent.includes("Old deleted board"), null, "gets the board restored on the phone");
+  await openBoard(A, "Old deleted board");
+  await until(A, () => document.querySelectorAll(".pin").length === 2, null, "with both its cards");
+  await until(A, () => [...document.querySelectorAll(".pin img")].some((i) => i.complete && i.naturalWidth > 0), null, "and its picture");
 
   console.log("sign-out");
   await openStudio(B);

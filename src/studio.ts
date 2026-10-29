@@ -14,8 +14,11 @@
 //
 // What goes up: the records the studio already has, records made on this device since studio sync was switched
 // on, the Inbox, and whatever those need (a card's board, a comment's card). Everything older waits for stage 4's
-// "Import my library". Each device's own Inbox maps onto the studio's (`alias`). Images go up after their card
-// exists on the server, attached to it, and come down by signed link into the device's files.
+// "Import my library" (`all`), which sends the rest, Recently deleted included: a deleted record goes up live
+// (`later`), gets its picture, and is deleted in the studio once it's all there. The import keeps every id, so a
+// second run finds nothing new. Each device's own Inbox maps onto the studio's (`alias`). Images go up after their
+// card exists on the server, attached to it, and come down by signed link into the device's files.
+// A record both sides have but never agreed on (the same library copied by old sync) goes the newer way, quietly.
 import {ApiError, Studio} from './vendor/studio-sdk.js';
 import {database, action, file, changes} from './data';
 import {readSession, writeSession} from './studio-session';
@@ -28,11 +31,23 @@ export type SyncState = {
   base: Record<string, string>; // `${type}:${studio id}` → hash of the last state device and studio agreed on
   alias: Record<string, string>; // this device's board id → the studio's (the Inbox)
   files: Record<string, string>; // local file_ref → studio file id
-  tombs: Record<string, {v: number; d: string; by?: string | null}>; // records the studio has deleted, from pulls
+  // Records the studio has deleted, from pulls. `rec`: the whole record, until the plan has looked at it once (a
+  // record deleted before this device ever had it goes into Recently deleted here too).
+  tombs: Record<string, {v: number; d: string; by?: string | null; rec?: Rec}>;
   refused: Record<string, {h: string; why: string}>; // creates the studio refused, held until the record changes
   conflicts: Conflict[];
+  all?: string; // when this device's whole library was sent for import (stage 4); unset, only newer records go up
+  later: Record<string, 1 | 'nofile'>; // deleted records sent up live by the import, deleted there once complete
 };
-export const emptyState = (): SyncState => ({base: {}, alias: {}, files: {}, tombs: {}, refused: {}, conflicts: []});
+export const emptyState = (): SyncState => ({
+  base: {},
+  alias: {},
+  files: {},
+  tombs: {},
+  refused: {},
+  conflicts: [],
+  later: {},
+});
 const TYPES: Type[] = ['board', 'pin', 'feedback'];
 const STORES = {board: 'boards', pin: 'pins', feedback: 'feedback'} as const;
 const PATHS = {board: 'boards', pin: 'pins', feedback: 'feedback'};
@@ -61,7 +76,8 @@ const DB_NAME = 'studio-wall.studio',
 const key = (t: Type, id: string) => `${t}:${id}`;
 
 // ------------------------------------------------------------------ mapping (Art-Talk-Back D-083)
-type Ctx = {alias: Record<string, string>; files: Record<string, string>; scope: Set<string>};
+// `pins`: the cards the studio already has, when known; a board's cover waits for its card to be there.
+type Ctx = {alias: Record<string, string>; files: Record<string, string>; scope: Set<string>; pins?: Set<string>};
 const sid = (c: Ctx, id: string) => c.alias[id] || id;
 const lid = (c: Ctx, id: string) => Object.keys(c.alias).find(k => c.alias[k] === id) || id;
 const text = (s: unknown, max = 5000) => (typeof s === 'string' && s ? s.slice(0, max) : null);
@@ -73,7 +89,10 @@ export function toServer(type: Type, r: Rec, c: Ctx): Rec {
         .trim()
         .slice(0, 200),
       description: text(r.description),
-      coverPinId: r.cover_pin_id && c.scope.has(r.cover_pin_id) ? r.cover_pin_id : null,
+      coverPinId:
+        r.cover_pin_id && c.scope.has(r.cover_pin_id) && (!c.pins || c.pins.has(r.cover_pin_id))
+          ? r.cover_pin_id
+          : null,
       position: Math.max(0, Math.min(1e6, Math.round(Number(r.position) || 0))),
       commentsEnabled: r.comments_enabled !== false,
     };
@@ -209,7 +228,8 @@ export function plan(local: Local, server: Server, st: SyncState, since: string,
   };
   const scope = new Set<string>();
   if (inbox) scope.add(inbox.id);
-  for (const t of TYPES) for (const r of local[t]) if (known(t, r.id) || r.created_at >= since) scope.add(r.id);
+  for (const t of TYPES)
+    for (const r of local[t]) if (st.all || known(t, r.id) || r.created_at >= since) scope.add(r.id);
   // A card or comment that goes up takes what it needs with it, or the studio would refuse it.
   for (const f of local.feedback)
     if (scope.has(f.id)) {
@@ -217,11 +237,36 @@ export function plan(local: Local, server: Server, st: SyncState, since: string,
       if (f.pin_id) scope.add(f.pin_id);
     }
   for (const p of local.pin) if (scope.has(p.id)) scope.add(p.board_id);
-  const c: Ctx = {alias: st.alias, files: st.files, scope};
+  const pins = new Set([...server.pin].filter(([, p]) => p.version).map(([id]) => id));
+  for (const k of Object.keys(st.tombs)) if (k.startsWith('pin:')) pins.add(k.slice(4));
+  const c: Ctx = {alias: st.alias, files: st.files, scope, pins};
   const byId: Record<Type, Map<string, Rec>> = {board: new Map(), pin: new Map(), feedback: new Map()};
   for (const t of TYPES) for (const r of local[t]) byId[t].set(t === 'board' ? sid(c, r.id) : r.id, r);
-  const localHash = (t: Type, r: Rec) => (r.deleted_at ? 'deleted' : JSON.stringify(fieldsOf(t, toServer(t, r, c))));
+  const liveHash = (t: Type, r: Rec) => JSON.stringify(fieldsOf(t, toServer(t, r, c)));
+  const localHash = (t: Type, r: Rec) => (r.deleted_at ? 'deleted' : liveHash(t, r));
   const tomb = (t: Type, id: string) => st.tombs[key(t, id)];
+  // Deleted in the studio before this device ever had it (another device's Recently deleted, imported): it goes into
+  // Recently deleted here, while it's still there (30 days).
+  const month = new Date(Date.parse(now) - 30 * 864e5).toISOString();
+  for (const t of TYPES)
+    for (const [k, T] of Object.entries(st.tombs)) {
+      if (!T.rec || !k.startsWith(t + ':')) continue;
+      const id = k.slice(t.length + 1);
+      if (!byId[t].has(id) && T.d >= month) {
+        if (t === 'pin' && T.rec.fileId && !Object.values(st.files).includes(T.rec.fileId))
+          st.files[T.rec.fileId] = T.rec.fileId;
+        out.apply[STORES[t]].push(toLocal(t, T.rec, undefined, c));
+        st.base[k] = 'deleted';
+      }
+      delete T.rec;
+    }
+  // A board deleted by the import waits for its deleted cards and comments to be complete in the studio.
+  const waiting = new Set<string>();
+  for (const k of Object.keys(st.later)) {
+    const [t, id] = k.split(':') as [Type, string];
+    const r = t === 'board' ? undefined : byId[t].get(id);
+    if (r) waiting.add(sid(c, r.board_id));
+  }
   for (const t of TYPES) {
     const ids = new Set([...server[t].keys()]);
     for (const [id, r] of byId[t]) if (scope.has(r.id) || tomb(t, id)) ids.add(id);
@@ -231,8 +276,27 @@ export function plan(local: Local, server: Server, st: SyncState, since: string,
         inScope = !!L && scope.has(L.id),
         S = server[t].get(id),
         T = S ? undefined : tomb(t, id);
-      const lh = L && (inScope || S || T) ? localHash(t, L) : undefined,
-        sh = S ? hashOf(t, S) : T ? 'deleted' : undefined;
+      let lh = L && (inScope || S || T) ? localHash(t, L) : undefined;
+      const sh = S ? hashOf(t, S) : T ? 'deleted' : undefined;
+      // An imported deleted record counts as live until the studio has all of it (its picture, its cards).
+      let held = false;
+      if (st.later[k] && (!L || T)) delete st.later[k];
+      else if (st.later[k] && L) {
+        const live = liveHash(t, L);
+        const complete =
+          !!S?.version &&
+          live === sh &&
+          (t !== 'pin' || !L.file_ref || !!st.files[L.file_ref] || st.later[k] === 'nofile') &&
+          (t !== 'board' || !waiting.has(id));
+        if (complete) {
+          st.base[k] = sh!;
+          delete st.later[k];
+        } else {
+          lh = live;
+          held = true;
+        }
+      }
+      const dead = !!L?.deleted_at && !held;
       if (!L && T) {
         delete st.base[k];
         continue;
@@ -247,13 +311,24 @@ export function plan(local: Local, server: Server, st: SyncState, since: string,
         if (lh !== undefined) st.base[k] = lh;
         continue;
       }
-      // A new alias (this device's Inbox meeting the studio's): the studio's copy wins, quietly.
-      const b = t === 'board' && L && st.alias[L.id] && !(k in st.base) ? lh : st.base[k];
+      // A new alias (this device's Inbox meeting the studio's): the studio's copy wins, quietly. A record held by the
+      // import is this device's to send. Any other first meeting: the newer copy wins, quietly.
+      let b = t === 'board' && L && st.alias[L.id] && !(k in st.base) ? lh : st.base[k];
+      if (held && S) b = sh;
+      else if (b === undefined && L && sh !== undefined && !(t === 'board' && st.alias[L.id]))
+        b = L.updated_at > (S?.updatedAt ?? T?.d ?? '') ? sh : lh;
       if (sh === b || (sh === undefined && b === undefined)) {
         if (!L) continue;
-        if (L.deleted_at) {
+        if (dead) {
           if (!S) {
-            st.base[k] = 'deleted';
+            // The import sends a deleted record the studio never had: up live first, deleted once complete.
+            if (st.all && b === undefined && !T) {
+              st.later[k] = 1;
+              const fields = toServer(t, L, c);
+              st.base[k] = JSON.stringify(fieldsOf(t, fields));
+              out.ops.push({op: 'create', type: t, id, fields});
+              out.local++;
+            } else st.base[k] = 'deleted';
             continue;
           }
           // Cards deleted with their board go with the board's delete (the studio does the same).
@@ -280,7 +355,11 @@ export function plan(local: Local, server: Server, st: SyncState, since: string,
           }
           // The restore brings back the studio's last copy; the patch then sends what changed here meanwhile.
           out.ops.push({op: 'restore', type: t, id, fields, patch: fields, version: T.v});
-        } else out.ops.push({op: 'create', type: t, id, fields});
+        } else {
+          // What the studio will have once it takes the create: a later change here is then an update, not news.
+          st.base[k] = JSON.stringify(fieldsOf(t, fields));
+          out.ops.push({op: 'create', type: t, id, fields});
+        }
         out.local++;
         continue;
       }
@@ -302,7 +381,9 @@ export function plan(local: Local, server: Server, st: SyncState, since: string,
             version: (L.version || 0) + 1,
           });
         st.base[k] = 'deleted';
-      } else delete st.base[k]; // gone from the studio without a trace (a refused create): it goes up again
+      } else if (L?.deleted_at && !held)
+        st.base[k] = 'deleted'; // deleted here, gone there: agreed
+      else delete st.base[k]; // gone from the studio without a trace (a refused create): it goes up again
     }
   }
   // Deletes last, cards before boards, so a card moved off a board leaves before the board's delete takes the rest.
@@ -368,7 +449,12 @@ function create(host: Host) {
           for (const ch of page.changes) {
             const k = key(ch.entityType as Type, ch.entityId);
             if (ch.record.deletedAt)
-              s.tombs[k] = {v: ch.record.version, d: ch.record.deletedAt, by: ch.record.deletedBy ?? null};
+              s.tombs[k] = {
+                v: ch.record.version,
+                d: ch.record.deletedAt,
+                by: ch.record.deletedBy ?? null,
+                rec: ch.record,
+              };
             else delete s.tombs[k];
           }
           writeState(s);
@@ -426,7 +512,7 @@ function create(host: Host) {
         `The studio didn't take a change${L ? ' to ' + label(t, L).charAt(0).toLowerCase() + label(t, L).slice(1) : ''}: ${why}`,
       );
   }
-  /** Compare and queue; merge the studio's changes into the device. Returns how many ops were queued. */
+  /** Compare and queue; merge the studio's changes into the device. Returns how many ops were queued (or held records freed). */
   async function reconcile() {
     const session = readSession();
     if (!session?.on) return 0;
@@ -440,6 +526,7 @@ function create(host: Host) {
     };
     const server = {} as Server;
     for (const t of TYPES) server[t] = new Map((await st.list(t)).map(r => [r.id, r]));
+    const held = Object.keys(s.later).length;
     const p = plan(local, server, s, session.on);
     for (const o of p.ops) {
       if (o.op === 'create') await st.create(o.type, {id: o.id, ...o.fields});
@@ -470,9 +557,13 @@ function create(host: Host) {
       });
       host.refresh();
     }
-    return p.ops.length;
+    // An imported deleted record that became complete counts as progress: its delete is next.
+    return p.ops.length + Math.max(0, held - Object.keys(s.later).length);
   }
-  /** Upload images of cards the studio has but whose picture it doesn't, one at a time, then attach each to its card. */
+  /**
+   * Upload images of cards the studio has but whose picture it doesn't, one at a time, then attach each to its card.
+   * A deleted card the import sent up live gets its picture before it is deleted there.
+   */
   async function uploads() {
     const st = await open(),
       db = await database,
@@ -482,7 +573,7 @@ function create(host: Host) {
     for (const p of await db.getAll('pins'))
       if (
         p.file_ref &&
-        !p.deleted_at &&
+        (!p.deleted_at || s.later[key('pin', p.id)]) &&
         !s.files[p.file_ref] &&
         !todo.some(x => x.file_ref === p.file_ref) &&
         (await st.get('pin', p.id))?.version
@@ -490,7 +581,16 @@ function create(host: Host) {
         todo.push(p);
     for (const [i, p] of todo.entries()) {
       const blob = await file(p.file_ref);
-      if (!blob) continue;
+      if (!blob) {
+        // No picture on this device to send: the imported deleted card goes on without it.
+        const now = readState();
+        if (now.later[key('pin', p.id)]) {
+          now.later[key('pin', p.id)] = 'nofile';
+          writeState(now);
+          done++;
+        }
+        continue;
+      }
       set('syncing', `Studio · uploading images ${i + 1} of ${todo.length}`);
       const type = blob.type || 'image/webp';
       const up = await st.api.request('POST', '/files/upload-url', {
@@ -511,7 +611,7 @@ function create(host: Host) {
     }
     return done;
   }
-  /** Fetch pictures the device doesn't have yet, by signed link, up to 40 a run. */
+  /** Fetch pictures the device doesn't have yet (Recently deleted's too), by signed link, up to 40 a run. */
   async function downloads() {
     const st = await open(),
       db = await database,
@@ -519,13 +619,7 @@ function create(host: Host) {
       blobs: Record<string, Blob> = {};
     const missing: string[] = [];
     for (const p of await db.getAll('pins'))
-      if (
-        p.file_ref &&
-        !p.deleted_at &&
-        s.files[p.file_ref] &&
-        !missing.includes(p.file_ref) &&
-        !(await file(p.file_ref))
-      )
+      if (p.file_ref && s.files[p.file_ref] && !missing.includes(p.file_ref) && !(await file(p.file_ref)))
         missing.push(p.file_ref);
     for (const ref of missing.slice(0, 40)) {
       try {
@@ -544,7 +638,8 @@ function create(host: Host) {
     const st = await open();
     set('syncing', 'Studio · syncing…');
     await st.sync();
-    for (let i = 0; i < 4; i++) {
+    // An import takes a few rounds: records, then pictures, then each card's picture, then the deletes.
+    for (let i = 0; i < 10; i++) {
       const queued = await reconcile();
       const up = await uploads().catch(e => {
         if (e instanceof ApiError) throw e;
@@ -682,6 +777,33 @@ function create(host: Host) {
     writeSession({...s, on: on ? s.on || new Date().toISOString() : null});
     location.reload();
   }
+  /** How much of this device's library the studio has, per type, Recently deleted included. */
+  async function counts() {
+    const db = await database,
+      s = readState(),
+      out = {} as Record<Type, {all: number; there: number}>;
+    for (const t of TYPES) {
+      const rs = (await db.getAll(STORES[t])) as Rec[];
+      const there = rs.filter(r => {
+        const k = key(t, t === 'board' ? s.alias[r.id] || r.id : r.id);
+        return k in s.base && !s.later[k] && !s.refused[k];
+      });
+      out[t] = {all: rs.length, there: there.length};
+    }
+    return out;
+  }
+  /** Stage 4: send everything on this device to the studio. Repeatable: ids are kept, so nothing is sent twice. */
+  async function importAll() {
+    const s = readState();
+    s.all ||= new Date().toISOString();
+    writeState(s);
+    for (let i = 0; i < 5; i++) {
+      await sync();
+      const c = await counts();
+      if (status.state !== 'on' || TYPES.every(t => c[t].there === c[t].all)) break;
+    }
+    return counts();
+  }
   async function keepMine(c: Conflict) {
     const s = readState();
     s.conflicts = s.conflicts.filter(x => !(x.type === c.type && x.id === c.id));
@@ -798,9 +920,10 @@ function create(host: Host) {
       host.show(`<div class="dialog-heading"><div class="eyebrow">STUDIO ACCOUNT</div><h2>Your studio</h2><p id="st-signed-in">Signed in as <strong>${esc(s.email)}</strong>.</p></div>
 <section class="studio-mode"><h3>How this device syncs</h3>
 <label class="studio-choice"><input type="radio" name="st-mode" value="old" ${s.on ? '' : 'checked'}><span><strong>Old sync</strong> · the way Studio Wall has always synced. Client links work.</span></label>
-<label class="studio-choice"><input type="radio" name="st-mode" value="studio" ${s.on ? 'checked' : ''}><span><strong>Studio sync</strong> · through your studio, with your other devices that use it. Boards, cards and comments made here from now on go up; your older ones wait for “Import my library”, coming next. Client links need old sync until they move too.</span></label>
+<label class="studio-choice"><input type="radio" name="st-mode" value="studio" ${s.on ? 'checked' : ''}><span><strong>Studio sync</strong> · through your studio, with your other devices that use it. Boards, cards and comments made here from now on go up; your older ones wait until you import them. Client links need old sync until they move too.</span></label>
 <p class="hint">Switching reloads Studio Wall. Nothing on this device is deleted either way.</p>
 ${s.on ? `<p class="sync-label hint" id="st-status">${esc(status.text)}</p><div class="pin-actions"><button id="st-sync">Sync now</button></div>` : ''}</section>
+${s.on ? `<section class="studio-import"><h3>Import my library to the studio</h3><p class="hint">Sends every board, card, comment and picture on this device to the studio, Recently deleted included, so your other devices get them. Run it on the device that has everything. Running it again sends only what isn't there yet.</p><div class="pin-actions"><button class="primary" id="st-import">Import my library to the studio</button></div><p class="hint" id="st-import-msg" role="status"></p></section>` : ''}
 ${st.conflicts.length ? `<section class="studio-review"><h3>To review</h3>${st.conflicts.map((c, i) => `<article><p><strong>${esc(label(c.type, c.local))}</strong> changed on this device and another one at the same time. The studio kept the other version.</p><div class="pin-actions"><button data-keep="${i}" class="primary">Use this device’s version</button><button data-drop="${i}">Keep the studio’s</button></div></article>`).join('')}</section>` : ''}
 ${
   Object.keys(st.refused).length
@@ -821,6 +944,19 @@ ${
     d.querySelector<HTMLButtonElement>('#st-sync')?.addEventListener('click', async () => {
       await sync();
       panel();
+    });
+    d.querySelector<HTMLButtonElement>('#st-import')?.addEventListener('click', async e => {
+      const b = e.currentTarget as HTMLButtonElement,
+        msg = $('#st-import-msg');
+      b.disabled = true;
+      msg.textContent = 'Importing… keep Studio Wall open until this says it’s done.';
+      const c = await importAll();
+      if (!b.isConnected) return;
+      b.disabled = false;
+      const line = (t: Type, w: string) => `${c[t].there} of ${plural(c[t].all, w)}`;
+      const all = TYPES.every(t => c[t].there === c[t].all);
+      msg.textContent = `${all ? 'Done. ' : ''}In the studio: ${line('board', 'board')}, ${line('pin', 'card')}, ${line('feedback', 'comment')} (Recently deleted included).${all ? '' : ` Not all there yet: ${status.state === 'on' ? 'run it again, or leave Studio Wall open to keep syncing' : status.text}.`}`;
+      $('#st-status').textContent = status.text;
     });
     d.querySelectorAll<HTMLButtonElement>('[data-keep]').forEach(
       b =>
