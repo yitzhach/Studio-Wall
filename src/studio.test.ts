@@ -272,3 +272,151 @@ it('compares only the fields both sides have', () => {
   ).toBe(hashOf('board', {name: 'A', position: 0, commentsEnabled: true}));
   expect(hashOf('pin', {deletedAt: 'x', note: 'a'})).toBe('deleted');
 });
+
+describe('import my library (stage 4)', () => {
+  const D = '2026-10-20T00:00:00.000Z';
+  /** A studio that takes every op, as the server would; a board's delete takes its live cards with it. */
+  function push(s: Server, st: SyncState, ops: ReturnType<typeof plan>['ops'], at = '2026-10-27T00:00:00.000Z') {
+    for (const o of ops) {
+      const S = s[o.type].get(o.id);
+      if (o.op === 'create') s[o.type].set(o.id, {id: o.id, version: 1, deletedAt: null, updatedAt: at, ...o.fields});
+      else if (o.op === 'update') s[o.type].set(o.id, {...S, ...o.patch, version: S!.version + 1});
+      else if (o.op === 'remove') {
+        const gone = [[o.type, o.id]] as [Type, string][];
+        if (o.type === 'board') for (const [pid, p] of s.pin) if (p.boardId === o.id) gone.push(['pin', pid]);
+        for (const [t, i] of gone) {
+          st.tombs[`${t}:${i}`] = {v: s[t].get(i)!.version + 1, d: at};
+          s[t].delete(i);
+        }
+      }
+    }
+  }
+  /** Plan and push until the device and the studio agree. */
+  function settle(l: Local, s: Server, st: SyncState, upload?: (st: SyncState) => void) {
+    const all: ReturnType<typeof plan>['ops'] = [];
+    for (let i = 0; i < 10; i++) {
+      const held = JSON.stringify(st.later),
+        p = plan(l, s, st, SINCE);
+      all.push(...p.ops);
+      push(s, st, p.ops);
+      upload?.(st);
+      if (!p.ops.length && held === JSON.stringify(st.later)) break;
+    }
+    return all;
+  }
+  type Type = 'board' | 'pin' | 'feedback';
+  const old = {created_at: BEFORE, updated_at: BEFORE};
+
+  it('sends every older record once; a second run sends nothing', () => {
+    const st = {...emptyState(), all: AFTER};
+    const l = local({
+      board: [board(1, old), board(2, {...old, cover_pin_id: id(10)})],
+      pin: [pin(10, 2, old), pin(11, 2, old)],
+      feedback: [rec({...old, id: id(20), board_id: id(2), pin_id: id(10), text: 'Love it'})],
+    });
+    const s = none();
+    const first = plan(l, s, st, SINCE);
+    expect(first.ops.map(o => [o.op, o.id])).toEqual([
+      ['create', id(1)],
+      ['create', id(2)],
+      ['create', id(10)],
+      ['create', id(11)],
+      ['create', id(20)],
+    ]);
+    // The cover waits for its card to be in the studio, then follows.
+    expect(first.ops[1].fields!.coverPinId).toBeNull();
+    push(s, st, first.ops);
+    expect(plan(l, s, st, SINCE).ops).toEqual([{op: 'update', type: 'board', id: id(2), patch: {coverPinId: id(10)}}]);
+    settle(l, s, st);
+    expect(plan(l, s, st, SINCE).ops).toEqual([]);
+    expect([s.board.size, s.pin.size, s.feedback.size]).toEqual([2, 2, 1]);
+  });
+  it('carries Recently deleted over: a deleted card goes up with its picture, then is deleted', () => {
+    const st = {...emptyState(), all: AFTER};
+    const l = local({
+      board: [board(1, old)],
+      pin: [pin(10, 1, {...old, file_ref: 'ref', deleted_at: D})],
+    });
+    const s = none();
+    const ops = settle(l, s, st, x => {
+      // The picture is uploaded once the card is in the studio.
+      if (s.pin.get(id(10))?.version) x.files.ref ||= id(90);
+    });
+    expect(ops.map(o => [o.op, o.id])).toEqual([
+      ['create', id(1)],
+      ['create', id(10)],
+      ['update', id(10)],
+      ['remove', id(10)],
+    ]);
+    expect(ops[2].patch).toEqual({fileId: id(90)});
+    expect(st.tombs['pin:' + id(10)]).toBeTruthy();
+    expect(st.later).toEqual({});
+    expect(st.base['pin:' + id(10)]).toBe('deleted');
+  });
+  it('a deleted board waits for its cards, then one delete takes them all', () => {
+    const st = {...emptyState(), all: AFTER};
+    const l = local({
+      board: [board(1, {...old, deleted_at: D})],
+      pin: [pin(10, 1, {...old, deleted_at: D}), pin(11, 1, {...old, deleted_at: D, file_ref: 'ref'})],
+    });
+    const s = none();
+    const ops = settle(l, s, st, x => {
+      if (s.pin.get(id(11))?.version) x.files.ref ||= id(90);
+    });
+    expect(ops.filter(o => o.op === 'remove').map(o => o.id)).toEqual([id(1)]);
+    expect(ops.findIndex(o => o.op === 'remove')).toBeGreaterThan(ops.findIndex(o => o.patch?.fileId));
+    expect(st.tombs['pin:' + id(10)]?.d).toBe(st.tombs['board:' + id(1)]?.d);
+    expect(plan(l, s, st, SINCE).ops).toEqual([]);
+  });
+  it('a card without its picture on this device still goes, once marked', () => {
+    const st = {...emptyState(), all: AFTER};
+    const l = local({board: [board(1, old)], pin: [pin(10, 1, {...old, file_ref: 'gone', deleted_at: D})]});
+    const s = none();
+    settle(l, s, st);
+    expect(s.pin.has(id(10))).toBe(true);
+    st.later['pin:' + id(10)] = 'nofile';
+    settle(l, s, st);
+    expect(s.pin.has(id(10))).toBe(false);
+  });
+  it('without the import, older deleted records stay here', () => {
+    const l = local({board: [board(1)], pin: [pin(10, 1, {deleted_at: AFTER})]});
+    expect(plan(l, none(), emptyState(), SINCE).ops.map(o => o.id)).toEqual([id(1)]);
+  });
+  it('on the other device, a record deleted before it ever had it goes into Recently deleted, once', () => {
+    const st = emptyState(),
+      rec = (n: number, d: string) => ({
+        ...toServer('pin', pin(n, 1, {file_ref: 'x'}), {alias: {}, files: {x: id(90)}, scope: new Set()}),
+        id: id(n),
+        version: 2,
+        deletedAt: d,
+      });
+    st.tombs['pin:' + id(10)] = {v: 2, d: AFTER, rec: rec(10, AFTER)};
+    st.tombs['pin:' + id(11)] = {v: 2, d: BEFORE, rec: rec(11, BEFORE)}; // over 30 days: gone for good
+    const l = local({board: [board(1, old)]});
+    const p = plan(l, none(), st, SINCE, '2026-11-02T00:00:00.000Z');
+    expect(p.apply.pins.map(x => [x.id, x.deleted_at, x.file_ref])).toEqual([[id(10), AFTER, id(90)]]);
+    expect(st.files[id(90)]).toBe(id(90));
+    expect(st.tombs['pin:' + id(10)].rec).toBeUndefined();
+    expect(p.ops).toEqual([]);
+  });
+  it('on the other device, the same library copied by old sync takes the newer copy quietly', () => {
+    const st = emptyState(),
+      s = none();
+    s.board.set(id(1), {id: id(1), version: 1, deletedAt: null, updatedAt: AFTER, name: 'Theirs', position: 1});
+    s.pin.set(id(10), {
+      ...toServer('pin', pin(10, 1), {alias: {}, files: {}, scope: new Set()}),
+      id: id(10),
+      version: 1,
+      deletedAt: null,
+      updatedAt: BEFORE,
+    });
+    const l = local({
+      board: [board(1, {...old, name: 'Mine'})],
+      pin: [pin(10, 1, {...old, note: 'newer here', updated_at: AFTER})],
+    });
+    const p = plan(l, s, st, SINCE);
+    expect(p.conflicts).toEqual([]);
+    expect(p.apply.boards.map(b => b.name)).toEqual(['Theirs']);
+    expect(p.ops).toEqual([{op: 'update', type: 'pin', id: id(10), patch: {note: 'newer here'}}]);
+  });
+});

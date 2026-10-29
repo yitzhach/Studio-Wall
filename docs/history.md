@@ -1,6 +1,17 @@
 # Studio Wall history
 
-Older HANDOFF.md updates (2026-10-24 and earlier), moved here word for word on 2026-10-28. Newest first. HANDOFF.md has the current state.
+Older HANDOFF.md updates, moved here word for word (2026-10-24 and earlier on 2026-10-28; the clean-up on 2026-10-29). Newest first. HANDOFF.md has the current state.
+
+## Previous update — clean-up (2026-10-26 to 2026-10-28, done)
+Goal: code that is easier to read and change, with **no** change in behaviour or looks. Approved by the user, including: CI fails on unformatted code; `docs/CODEX_START.md` may be deleted. Every PR passed `npm run format:check`, `npm test`, `npm run build` and `npm run test:devices` (36/36) locally and CI `check` before merging; Workers Builds on main succeeded for each merge.
+- **Step 0:** art-show-tracker #17 (e2e holds pulls with one route that is never removed) → Art-Talk-Back #43 green and merged.
+- **#30 — formatting.** Prettier 3.9.10 (`.prettierrc.json`: 120 cols, single quotes, no bracket spacing), `npm run format` / `format:check`, CI step. `src/vendor/`, `index.html`, `share.html`, `tests/` not formatted.
+- **#31 — duplicates and dead code.** `src/text.ts` has the one `esc()` and `isHttpUrl()` (the Worker keeps its own `esc()`; `studio.ts` keeps its stricter no-spaces link check on purpose). Removed unused `selected`, `Session` import, `req` parameter; tsconfig now has `noUnusedLocals` / `noUnusedParameters`. Built JS: the helpers moved into the shared chunk, nothing else.
+- **#32 — `action()` in `src/data.ts`.** One function per action type (`mergeLibrary`, `importBoard`, `restoreFiles`, `copyOrMovePins`, `setShareSettings`, `createBoard`, `savePins`, `toggleStar`, `addComment`, `restoreDeleted`, `purgeFiles`, `needsBackend`, `updateRecord`) in a `Map`; `action()` still owns the transaction, undo history, activity log, outbox and rollback. `src/actions.test.ts` (11 tests, written before the move) covers library.merge, files.restore, board.import, pin.link and refusals.
+- **#33 — `main.ts` split.** `main.ts` is now only the wiring (buttons after each render, drop / paste / keyboard, boot). The rest is in `src/app/`: `state.ts` (one `ui` object: what's on screen, plus the library questions), `kit.ts` (icons, toast, run, the dialog), `render.ts` (the page from named pieces: sidebar, header, client news, intro, board grid, toolbar, card grid, conversation, footer, phone nav; navigation; refresh), `save.ts`, `focus.ts`, `boards.ts`, `library.ts` (the dialogs), `sync-status.ts`, `remote.ts`. No import cycles: `render.ts` calls back into `main.ts` through `onRender()`. Proof: 23 screens and dialogs captured at 1280 px and 390 px, dark and light, before and after: all 92 page HTML snapshots identical, screenshots differ only in the build-time stamp.
+- **#34 — docs.** "Previous update" sections (2026-10-24 and older) moved word for word to `docs/history.md`; README brought up to date (sync, client links, layout); `docs/CODEX_START.md` deleted.
+- **Left alone (formatting only), as planned:** worker routes, `src/sync.ts`, `src/share.ts` (they move to studio-api in Stages 5–6) and `src/studio.ts` (Stage 4 builds on it).
+- **Running the two-device test in the cloud sandbox:** `STUDIO_PLATFORM=../Art-Talk-Back STUDIO_WALL_CHROMIUM=/opt/pw-browsers/chromium npm run test:devices`, after `pnpm install` in an Art-Talk-Back checkout of `claude/next-steps-y4vrwv`.
 
 ## Previous update — Stages 1 and 2 of the backend move (2026-10-24)
 - Device tests: none this round ("not tested yet"), so there was nothing to fix.
