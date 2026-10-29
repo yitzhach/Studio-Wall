@@ -1,6 +1,6 @@
 # Studio Wall handoff
 
-Updated: 2026-10-28. Start here in a new chat; no old conversation is needed. Updates from 2026-10-24 and earlier are in `docs/history.md`.
+Updated: 2026-10-29. Start here in a new chat; no old conversation is needed. Updates from 2026-10-24 and earlier are in `docs/history.md`.
 
 ## Current state (2026-10-28) — read this first
 - **Code clean-up done (2026-10-28), no change in what the app does or how it looks:** PRs #30–#34, all merged and deployed. The owner app's code now lives in `src/app/` (see "Latest update — clean-up"). Nothing new to try on devices. **Next: Stage 4** (prompt in "What happens next").
@@ -62,43 +62,51 @@ Still open (the agent asks, never builds on a guess):
    **What Stage 3 needs from the user:** nothing required. The studio account already exists: the user's email is studio-api's owner, and the emailed code or the password signs in. Optional: a staging Worker `studio-studio-wall-staging` bound to `studio-api-staging`, for trying studio sync without touching the live app. Its first deploy is the user's step, and the plan's gate doesn't need it. Decisions 6–9 above don't block Stage 3.
 3. Done in the 2026-10-23 round: owner told of client removals (#19), multi-image client adds (#20), Shortcut first-link fix (#21).
 
-**Start a new chat?** Yes, for Stage 4. Paste this prompt (the Stage 3 one it replaces said the same about Stage 3):
+**Start a new chat?** Yes, for Stage 4. Attach yitzhach/Studio-Wall and yitzhach/Art-Talk-Back to the chat, fill in the two lines in angle brackets, and paste this prompt (updated 2026-10-29):
 
 ```
-Work in yitzhach/Studio-Wall and yitzhach/Art-Talk-Back (the studio platform).
-Read Studio-Wall's HANDOFF.md ("Current state", "What happens next", the two
-"Latest update" sections), AGENTS.md and docs/backend-and-ai-plan.md. The
-owner app's code is in src/app/ (main.ts only wires it up); studio sync is
-still src/studio.ts. Then read
-Art-Talk-Back's CLAUDE.md, docs/HANDOFF.md, docs/phase-5-booth.md (the pattern
-to follow) and docs/SHIPPING.md. Art-Talk-Back's default branch is
-claude/next-steps-y4vrwv; Studio-Wall's is main. Work from each current
-default branch. You may merge your own PRs once tests and build pass;
-Studio-Wall's main deploys to Cloudflare automatically, and Art-Talk-Back
-ships per its SHIPPING.md (app before platform). Verify deploys by the
-deployed Worker code via the Cloudflare connector, not GitHub checks.
-Keep Studio-Wall's HANDOFF.md current with every change, and Art-Talk-Back's
-docs/HANDOFF.md, DECISIONS.md and CHANGELOG.md when you change that repo.
+Stage 4 of the Studio Wall backend move: "Import my library to the studio".
 
-Decisions are recorded in HANDOFF "What happens next" Step 2 (move onto
-studio-api: yes; studio sign-in with Access kept during the move: yes; client
-links rebuilt in studio-api: yes; old D1/R2 read-only 30 days: yes;
-auto-tags: not now).
-Device test results: <paste what worked / what didn't, or "not tested yet">
+Repos: yitzhach/Studio-Wall (default branch main; merging deploys to
+Cloudflare) and yitzhach/Art-Talk-Back (default branch
+claude/next-steps-y4vrwv). Work from each repo's current default branch.
+
+Read first:
+- Studio-Wall: HANDOFF.md ("Current state", "What happens next", both
+  "Latest update" sections), AGENTS.md, docs/backend-and-ai-plan.md.
+  The owner app's code is in src/app/ (main.ts only wires it up). Studio
+  sync is src/studio.ts.
+- Art-Talk-Back: CLAUDE.md, docs/HANDOFF.md, docs/phase-5-booth.md (the
+  pattern to follow), docs/SHIPPING.md.
+
+Device test results: <what worked / what didn't, or "not tested yet">
 The device with my whole library: <desktop / phone>
 
 This round:
 1. Fix anything my device tests found.
-2. Build Stage 4 of docs/backend-and-ai-plan.md in Studio-Wall: "Import my
-   library to the studio" in Studio account (src/studio.ts already syncs;
-   the import widens what goes up to everything on the device), repeatable,
-   pictures included. Gate: tests/two-devices.mjs extended (counts match on
-   the second device, pictures open, Recently deleted carries over). Ship
-   it and check the deploy.
-3. Stop after Stage 4 and tell me what Stage 5 (client links) needs from me.
-4. Ask me before anything that needs my decision, money, secrets, a new
-   Worker's first deploy, or deleting data.
-I may not be able to test on devices; list what I should try when I can.
+2. Build Stage 4 in Studio-Wall: an "Import my library to the studio"
+   button in Studio account. It sends every board, card, comment and
+   picture on this device to the studio. Running it twice must not make
+   duplicates. Gate: extend tests/two-devices.mjs so the second device's
+   counts match, pictures open, and Recently deleted carries over.
+3. Before merging: npm run format:check, npm test, npm run build, and
+   npm run test:devices. In the cloud sandbox, run pnpm install in an
+   Art-Talk-Back checkout first, then:
+   STUDIO_PLATFORM=../Art-Talk-Back STUDIO_WALL_CHROMIUM=/opt/pw-browsers/chromium npm run test:devices
+4. Merge your own PRs once CI's "check" job is green. The
+   "Workers Builds" preview check always fails on PR branches; ignore it.
+   The live site is behind Cloudflare Access, so check each deploy with
+   the Cloudflare API connector: the Workers Builds build for the merge
+   commit on main must say success.
+5. Keep Studio-Wall's HANDOFF.md current. If you change Art-Talk-Back,
+   update its docs/HANDOFF.md, DECISIONS.md and CHANGELOG.md too.
+6. Stop after Stage 4. Tell me what Stage 5 (client links) needs from me.
+
+Ask me before anything that changes how the app looks beyond the new
+button, needs my decision, costs money, needs secrets, is a new Worker's
+first deploy, or deletes data. At the end, list what to try on my
+devices, including running the import once on the device with the whole
+library and checking the counts on the other one.
 ```
 
 ## Latest update — clean-up (2026-10-26 to 2026-10-28, done)
