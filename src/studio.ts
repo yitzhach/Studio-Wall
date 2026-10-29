@@ -449,7 +449,12 @@ function create(host: Host) {
           for (const ch of page.changes) {
             const k = key(ch.entityType as Type, ch.entityId);
             if (ch.record.deletedAt)
-              s.tombs[k] = {v: ch.record.version, d: ch.record.deletedAt, by: ch.record.deletedBy ?? null, rec: ch.record};
+              s.tombs[k] = {
+                v: ch.record.version,
+                d: ch.record.deletedAt,
+                by: ch.record.deletedBy ?? null,
+                rec: ch.record,
+              };
             else delete s.tombs[k];
           }
           writeState(s);
