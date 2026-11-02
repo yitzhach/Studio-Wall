@@ -1,7 +1,7 @@
 // Stage 3 of docs/backend-and-ai-plan.md: how studio sync compares the device with the studio (src/studio.ts plan()).
 import 'fake-indexeddb/auto';
 import {describe, it, expect} from 'vitest';
-import {plan, toServer, emptyState, hashOf, type Local, type Server, type SyncState} from './studio';
+import {plan, toServer, emptyState, hashOf, studioIdFor, type Local, type Server, type SyncState} from './studio';
 
 const SINCE = '2026-10-26T00:00:00.000Z',
   BEFORE = '2026-10-01T00:00:00.000Z',
@@ -45,8 +45,8 @@ function mirror(l: Local, st: SyncState, v = 1): Server {
   for (const t of ['board', 'pin', 'feedback'] as const)
     for (const r of l[t])
       if (!r.deleted_at)
-        s[t].set(t === 'board' ? st.alias[r.id] || r.id : r.id, {
-          id: t === 'board' ? st.alias[r.id] || r.id : r.id,
+        s[t].set(st.alias[r.id] || r.id, {
+          id: st.alias[r.id] || r.id,
           version: v,
           deletedAt: null,
           createdAt: r.created_at,
@@ -418,5 +418,48 @@ describe('import my library (stage 4)', () => {
     expect(p.conflicts).toEqual([]);
     expect(p.apply.boards.map(b => b.name)).toEqual(['Theirs']);
     expect(p.ops).toEqual([{op: 'update', type: 'pin', id: id(10), patch: {note: 'newer here'}}]);
+  });
+});
+
+describe('ids the studio can’t take (the old Worker’s Shortcut captures and client cards)', () => {
+  const OLD = '3BDE4B3D1B0047599ABA5A74AE9FD4C1'; // 32 hex digits, as worker/index.ts makes them
+  it('makes a ULID from the id alone, the same every time; a ULID stays itself', () => {
+    const a = studioIdFor(OLD);
+    expect(a).toMatch(/^[0-7][0-9A-HJKMNP-TV-Z]{25}$/);
+    expect(studioIdFor(OLD)).toBe(a);
+    expect(studioIdFor(OLD.toLowerCase())).toBe(a);
+    expect(studioIdFor('3BDE4B3D1B0047599ABA5A74AE9FD4C2')).not.toBe(a);
+    expect(studioIdFor('sample-1')).toMatch(/^[0-7][0-9A-HJKMNP-TV-Z]{25}$/);
+    expect(studioIdFor(id(5))).toBe(id(5));
+  });
+  it('sends such a card under that id, its comment pointing at it, and agrees after', () => {
+    const st = {...emptyState(), all: AFTER};
+    const l = local({
+      board: [board(1, {cover_pin_id: OLD})],
+      pin: [pin(0, 1, {id: OLD})],
+      feedback: [rec({id: id(20), board_id: id(1), pin_id: OLD, text: 'Love it'})],
+    });
+    const p = plan(l, none(), st, SINCE);
+    const sidOld = studioIdFor(OLD);
+    expect(p.ops.map(o => o.id)).toEqual([id(1), sidOld, id(20)]);
+    expect(p.ops[2].fields!.pinId).toBe(sidOld);
+    const s = mirror(l, st);
+    const again = plan(l, s, st, SINCE);
+    expect(again.apply.pins).toEqual([]);
+    expect(again.ops).toEqual([]);
+    expect(s.board.get(id(1))!.coverPinId).toBe(sidOld);
+  });
+  it('on another device with the same card from old sync, matches it instead of adding a second', () => {
+    const desktop = {...emptyState(), all: AFTER};
+    const l = local({board: [board(1, {created_at: BEFORE})], pin: [pin(0, 1, {id: OLD, created_at: BEFORE})]});
+    const s = mirror(l, (plan(l, none(), desktop, SINCE), desktop));
+    const phone = emptyState();
+    const p = plan(l, s, phone, SINCE);
+    expect(p.apply.pins.map(x => x.id)).toEqual([]);
+    expect(p.ops).toEqual([]);
+    expect(phone.alias[OLD]).toBe(studioIdFor(OLD));
+    // A change made in the studio comes back onto the device's own card.
+    s.pin.set(studioIdFor(OLD), {...s.pin.get(studioIdFor(OLD)), note: 'edited', version: 2});
+    expect(plan(l, s, phone, SINCE).apply.pins.map(x => [x.id, x.note])).toEqual([[OLD, 'edited']]);
   });
 });

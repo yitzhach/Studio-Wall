@@ -16,7 +16,9 @@
 // on, the Inbox, and whatever those need (a card's board, a comment's card). Everything older waits for stage 4's
 // "Import my library" (`all`), which sends the rest, Recently deleted included: a deleted record goes up live
 // (`later`), gets its picture, and is deleted in the studio once it's all there. The import keeps every id, so a
-// second run finds nothing new. Each device's own Inbox maps onto the studio's (`alias`). Images go up after their
+// second run finds nothing new. Each device's own Inbox maps onto the studio's (`alias`), and so does a record whose
+// own id isn't a ULID (the old Worker's Shortcut captures and client cards): onto an id made from its own, the same on
+// every device, because the studio only takes ULIDs. Images go up after their
 // card exists on the server, attached to it, and come down by signed link into the device's files.
 // A record both sides have but never agreed on (the same library copied by old sync) goes the newer way, quietly.
 import {ApiError, Studio} from './vendor/studio-sdk.js';
@@ -29,7 +31,7 @@ type Rec = Record<string, any>;
 export type Conflict = {type: Type; id: string; local: Rec; at: string};
 export type SyncState = {
   base: Record<string, string>; // `${type}:${studio id}` → hash of the last state device and studio agreed on
-  alias: Record<string, string>; // this device's board id → the studio's (the Inbox)
+  alias: Record<string, string>; // this device's id → the studio's (the Inbox; records whose own id isn't a ULID)
   files: Record<string, string>; // local file_ref → studio file id
   // Records the studio has deleted, from pulls. `rec`: the whole record, until the plan has looked at it once (a
   // record deleted before this device ever had it goes into Recently deleted here too).
@@ -79,6 +81,30 @@ const key = (t: Type, id: string) => `${t}:${id}`;
 // `pins`: the cards the studio already has, when known; a board's cover waits for its card to be there.
 type Ctx = {alias: Record<string, string>; files: Record<string, string>; scope: Set<string>; pins?: Set<string>};
 const sid = (c: Ctx, id: string) => c.alias[id] || id;
+const ULID = /^[0-7][0-9A-HJKMNP-TV-Z]{25}$/;
+/**
+ * The studio's id for a record whose own id isn't a ULID: made from that id alone (its hex digits, or a hash of it),
+ * so every device that has the record maps it onto the same studio record. A ULID is its own studio id.
+ */
+export function studioIdFor(id: string) {
+  if (ULID.test(id)) return id;
+  let hex = id.replace(/[^0-9a-f]/gi, '');
+  if (hex.length < 32) {
+    hex = '';
+    for (let seed = 1; hex.length < 32; seed++) {
+      let h = 2166136261 ^ seed;
+      for (let i = 0; i < id.length; i++) h = Math.imul(h ^ id.charCodeAt(i), 16777619);
+      hex += (h >>> 0).toString(16).padStart(8, '0');
+    }
+  }
+  // 48 bits of "time" (10 characters) and 80 of randomness (16): a well-formed ULID.
+  const b32 = (n: bigint, len: number) => {
+    let out = '';
+    for (let i = 0; i < len; i++, n >>= 5n) out = '0123456789ABCDEFGHJKMNPQRSTVWXYZ'[Number(n & 31n)] + out;
+    return out;
+  };
+  return b32(BigInt('0x' + hex.slice(0, 12)), 10) + b32(BigInt('0x' + hex.slice(12, 32)), 16);
+}
 const lid = (c: Ctx, id: string) => Object.keys(c.alias).find(k => c.alias[k] === id) || id;
 const text = (s: unknown, max = 5000) => (typeof s === 'string' && s ? s.slice(0, max) : null);
 /** A local record as the studio's fields (camelCase; empty text is null; annotations live in meta). */
@@ -90,8 +116,8 @@ export function toServer(type: Type, r: Rec, c: Ctx): Rec {
         .slice(0, 200),
       description: text(r.description),
       coverPinId:
-        r.cover_pin_id && c.scope.has(r.cover_pin_id) && (!c.pins || c.pins.has(r.cover_pin_id))
-          ? r.cover_pin_id
+        r.cover_pin_id && c.scope.has(r.cover_pin_id) && (!c.pins || c.pins.has(sid(c, r.cover_pin_id)))
+          ? sid(c, r.cover_pin_id)
           : null,
       position: Math.max(0, Math.min(1e6, Math.round(Number(r.position) || 0))),
       commentsEnabled: r.comments_enabled !== false,
@@ -120,7 +146,7 @@ export function toServer(type: Type, r: Rec, c: Ctx): Rec {
   }
   return {
     boardId: sid(c, r.board_id),
-    pinId: r.pin_id || null,
+    pinId: r.pin_id ? sid(c, r.pin_id) : null,
     text: String(r.text || '').trim(),
     starred: typeof r.starred === 'boolean' ? r.starred : null,
     authorName: text(r.author_name, 100),
@@ -152,7 +178,7 @@ export function toLocal(type: Type, s: Rec, old: Rec | undefined, c: Ctx): Rec {
       ...base,
       name: s.name,
       description: s.description ?? '',
-      cover_pin_id: s.coverPinId || null,
+      cover_pin_id: s.coverPinId ? lid(c, s.coverPinId) : null,
       position: s.position ?? 0,
       comments_enabled: s.commentsEnabled !== false,
       visibility: old?.visibility || 'private',
@@ -184,7 +210,7 @@ export function toLocal(type: Type, s: Rec, old: Rec | undefined, c: Ctx): Rec {
   return {
     ...base,
     board_id: lid(c, s.boardId),
-    pin_id: s.pinId || null,
+    pin_id: s.pinId ? lid(c, s.pinId) : null,
     text: s.text ?? '',
     starred: typeof s.starred === 'boolean' ? s.starred : undefined,
     author_name: s.authorName ?? undefined,
@@ -217,13 +243,14 @@ export function plan(local: Local, server: Server, st: SyncState, since: string,
   const out: Plan = {ops: [], apply: {boards: [], pins: [], feedback: []}, conflicts: [], local: 0};
   const removes: Op[] = [];
   // This device's Inbox is the studio's Inbox once the studio has one.
+  for (const t of TYPES) for (const r of local[t]) if (!ULID.test(r.id)) st.alias[r.id] ||= studioIdFor(r.id);
   const inbox = local.board.find(b => b.name === 'Inbox' && !b.deleted_at);
   if (inbox && !st.alias[inbox.id] && !server.board.has(inbox.id) && !st.base[key('board', inbox.id)]) {
     const theirs = [...server.board.values()].find(b => b.name === 'Inbox');
     if (theirs) st.alias[inbox.id] = theirs.id;
   }
   const known = (t: Type, id: string) => {
-    const s = t === 'board' ? st.alias[id] || id : id;
+    const s = st.alias[id] || id;
     return server[t].has(s) || !!st.tombs[key(t, s)] || key(t, s) in st.base;
   };
   const scope = new Set<string>();
@@ -241,7 +268,9 @@ export function plan(local: Local, server: Server, st: SyncState, since: string,
   for (const k of Object.keys(st.tombs)) if (k.startsWith('pin:')) pins.add(k.slice(4));
   const c: Ctx = {alias: st.alias, files: st.files, scope, pins};
   const byId: Record<Type, Map<string, Rec>> = {board: new Map(), pin: new Map(), feedback: new Map()};
-  for (const t of TYPES) for (const r of local[t]) byId[t].set(t === 'board' ? sid(c, r.id) : r.id, r);
+  for (const t of TYPES) for (const r of local[t]) byId[t].set(sid(c, r.id), r);
+  // The Inbox's alias, not one made from an id the studio can't take.
+  const inboxAlias = (t: Type, L: Rec) => t === 'board' && !!st.alias[L.id] && st.alias[L.id] !== studioIdFor(L.id);
   const liveHash = (t: Type, r: Rec) => JSON.stringify(fieldsOf(t, toServer(t, r, c)));
   const localHash = (t: Type, r: Rec) => (r.deleted_at ? 'deleted' : liveHash(t, r));
   const tomb = (t: Type, id: string) => st.tombs[key(t, id)];
@@ -313,9 +342,9 @@ export function plan(local: Local, server: Server, st: SyncState, since: string,
       }
       // A new alias (this device's Inbox meeting the studio's): the studio's copy wins, quietly. A record held by the
       // import is this device's to send. Any other first meeting: the newer copy wins, quietly.
-      let b = t === 'board' && L && st.alias[L.id] && !(k in st.base) ? lh : st.base[k];
+      let b = L && inboxAlias(t, L) && !(k in st.base) ? lh : st.base[k];
       if (held && S) b = sh;
-      else if (b === undefined && L && sh !== undefined && !(t === 'board' && st.alias[L.id]))
+      else if (b === undefined && L && sh !== undefined && !inboxAlias(t, L))
         b = L.updated_at > (S?.updatedAt ?? T?.d ?? '') ? sh : lh;
       if (sh === b || (sh === undefined && b === undefined)) {
         if (!L) continue;
@@ -471,7 +500,7 @@ function create(host: Host) {
   }
   async function localRecord(t: Type, id: string) {
     const s = readState();
-    const localId = t === 'board' ? Object.keys(s.alias).find(k => s.alias[k] === id) || id : id;
+    const localId = Object.keys(s.alias).find(k => s.alias[k] === id) || id;
     return (await database).get(STORES[t], localId) as Promise<Rec | undefined>;
   }
   async function noteConflict(t: Type, id: string) {
@@ -573,10 +602,10 @@ function create(host: Host) {
     for (const p of await db.getAll('pins'))
       if (
         p.file_ref &&
-        (!p.deleted_at || s.later[key('pin', p.id)]) &&
+        (!p.deleted_at || s.later[key('pin', s.alias[p.id] || p.id)]) &&
         !s.files[p.file_ref] &&
         !todo.some(x => x.file_ref === p.file_ref) &&
-        (await st.get('pin', p.id))?.version
+        (await st.get('pin', s.alias[p.id] || p.id))?.version
       )
         todo.push(p);
     for (const [i, p] of todo.entries()) {
@@ -584,8 +613,9 @@ function create(host: Host) {
       if (!blob) {
         // No picture on this device to send: the imported deleted card goes on without it.
         const now = readState();
-        if (now.later[key('pin', p.id)]) {
-          now.later[key('pin', p.id)] = 'nofile';
+        const k = key('pin', now.alias[p.id] || p.id);
+        if (now.later[k]) {
+          now.later[k] = 'nofile';
           writeState(now);
           done++;
         }
@@ -603,7 +633,9 @@ function create(host: Host) {
       });
       const put = await fetch(up.uploadUrl, {method: 'PUT', body: blob, headers: {'content-type': type}});
       if (!put.ok) throw Error(`An image couldn't be uploaded (${put.status})`);
-      await st.api.request('POST', `/files/${up.file.id}/attach`, {json: {entityType: 'pin', entityId: p.id}});
+      await st.api.request('POST', `/files/${up.file.id}/attach`, {
+        json: {entityType: 'pin', entityId: s.alias[p.id] || p.id},
+      });
       const now = readState();
       now.files[p.file_ref] = up.file.id;
       writeState(now);
@@ -785,7 +817,7 @@ function create(host: Host) {
     for (const t of TYPES) {
       const rs = (await db.getAll(STORES[t])) as Rec[];
       const there = rs.filter(r => {
-        const k = key(t, t === 'board' ? s.alias[r.id] || r.id : r.id);
+        const k = key(t, s.alias[r.id] || r.id);
         return k in s.base && !s.later[k] && !s.refused[k];
       });
       out[t] = {all: rs.length, there: there.length};
