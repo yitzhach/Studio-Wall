@@ -2,13 +2,22 @@
 import {action, type Board} from '../data';
 import {palette} from '../media';
 import {exportBoard} from '../backup';
-import {syncNow, syncStatus, listShares, createShare, revokeShare, shareUrl, type Permission} from '../sync';
-import {studioSyncOn} from '../studio-session';
+import {
+  syncNow,
+  syncStatus,
+  listShares,
+  createShare,
+  revokeShare,
+  shareUrl,
+  type Permission,
+  type Share,
+} from '../sync';
+import {readSession, studioSyncOn} from '../studio-session';
 import {esc} from '../text';
 import {ui, boardNow, selection} from './state';
 import {icon, paintIcons, show, toast, run, options} from './kit';
 import {navigate, refresh, render} from './render';
-import {remoteChanged} from './remote';
+import {loadStudio, remoteChanged} from './remote';
 
 export function boardDialog(board?: Board) {
   const d = show(
@@ -48,10 +57,30 @@ export function shareDialog(only: string[] = []) {
   const n = only.length,
     cards = `${n} card${n === 1 ? '' : 's'}`;
   const settings = board.share_settings || {mode: 'private', permission: 'comment'};
-  const online = !studioSyncOn() && syncStatus().state !== 'off';
+  // Links live where this device syncs: the studio on studio sync (stage 5), else the old Worker.
+  const viaStudio = studioSyncOn();
+  const online = viaStudio ? !readSession()?.expired : syncStatus().state !== 'off';
+  const links: {
+    list(): Promise<Share[]>;
+    create(board: string, p: Permission, days: number, password: string, only: string[]): Promise<Share>;
+    revoke(s: Share): Promise<void>;
+  } = viaStudio
+    ? {
+        list: async () => (await loadStudio()).links.list(),
+        create: async (...a) => (await loadStudio()).links.create(...a),
+        revoke: async s => (await loadStudio()).links.revoke(s as never),
+      }
+    : {
+        list: listShares,
+        create: async (...a) => {
+          await syncNow(remoteChanged);
+          return createShare(...a);
+        },
+        revoke: s => revokeShare(s.token),
+      };
   const d =
     show(`<div class="dialog-heading"><div class="eyebrow">SHARE WITH A CLIENT</div><h2>${n ? `Send ${cards} from “${esc(board.name)}”` : `Send “${esc(board.name)}”`}</h2><p>${n ? `This link opens only the ${cards} you selected: their images, titles and credits. The rest of the board, your image notes, tags and other boards stay private.` : 'A client link opens this board only: its images, titles and credits. Your image notes, tags and other boards stay private.'} Links can expire, and you can turn one off at any time.</p></div>
- ${online ? `<form id="new-link"><div class="form-row"><label>Client can<select name="permission"><option value="comment">View, star and comment</option><option value="contribute">View, comment and add cards</option><option value="view">View only</option></select></label><label>Link expires<select name="expires"><option value="30">In 30 days</option><option value="7">In 7 days</option><option value="90">In 90 days</option><option value="0">Never</option></select></label></div><label>Password<input name="password" type="text" autocomplete="off" autocapitalize="off" spellcheck="false" minlength="8" maxlength="200" placeholder="Optional · at least 8 characters"></label><p class="form-help">Clients type it once on each device. Send it separately from the link (say, by text). It can’t be shown again.</p><p class="error" role="alert"></p><button class="primary">${icon('link')} ${n ? `Create link for ${cards}` : 'Create client link'}</button></form><div id="link-list" class="link-list"><p class="hint">Loading links…</p></div>` : studioSyncOn() ? `<p class="notice">Client links still run on old sync, and this device uses studio sync. To make or change links here, switch back to old sync in Studio account (they move to the studio in a later stage).</p>` : `<p class="notice">Client links need sync. Open Studio Wall at its web address and sign in; once the footer says “Synced online”, you can create links here.</p>`}
+ ${online ? `<form id="new-link"><div class="form-row"><label>Client can<select name="permission"><option value="comment">View, star and comment</option><option value="contribute">View, comment and add cards</option><option value="view">View only</option></select></label><label>Link expires<select name="expires"><option value="30">In 30 days</option><option value="7">In 7 days</option><option value="90">In 90 days</option><option value="0">Never</option></select></label></div><label>Password<input name="password" type="text" autocomplete="off" autocapitalize="off" spellcheck="false" minlength="8" maxlength="200" placeholder="Optional · at least 8 characters"></label><p class="form-help">Clients type it once on each device. Send it separately from the link (say, by text). It can’t be shown again.</p><p class="error" role="alert"></p><button class="primary">${icon('link')} ${n ? `Create link for ${cards}` : 'Create client link'}</button></form><div id="link-list" class="link-list"><p class="hint">Loading links…</p></div>` : viaStudio ? `<p class="notice">Your studio sign-in has ended. Sign in again in Studio account to make or change client links.</p>` : `<p class="notice">Client links need sync. Open Studio Wall at its web address and sign in; once the footer says “Synced online”, you can create links here.</p>`}
  <label class="checkbox"><input type="checkbox" name="comments_enabled" ${board.comments_enabled !== false ? 'checked' : ''}> Allow client comments, stars and added cards on this board</label><p class="form-help">Turning this off makes every link view only. Existing feedback and cards are kept.</p>
  <details class="local-preview"><summary>Preview the client view on this device</summary><form id="share-settings"><label>Preview as a client who can<select name="permission"><option value="view">View references</option><option value="comment">View and comment</option><option value="contribute">View, comment and add references</option></select></label><p class="form-help">This preview is only on this device. For a real client, create a link above.</p><button class="secondary" id="client-preview" type="button">Open client preview</button></form></details>`);
   const permission = d.querySelector<HTMLSelectElement>('#share-settings [name=permission]')!;
@@ -98,9 +127,9 @@ export function shareDialog(only: string[] = []) {
   };
   const draw = async () => {
     try {
-      const links = (await listShares()).filter(x => x.board_id === board.id);
-      list.innerHTML = links.length
-        ? links
+      const mine = (await links.list()).filter(x => x.board_id === board.id);
+      list.innerHTML = mine.length
+        ? mine
             .map(
               x =>
                 `<div class="link-row"><div><strong>${x.permission === 'contribute' ? 'View, comment and add cards' : x.permission === 'comment' ? 'View, star and comment' : 'View only'}</strong><span>${x.pin_count ? `${x.pin_count} selected card${x.pin_count === 1 ? '' : 's'} · ` : ''}${x.locked ? 'Password · ' : ''}Created ${when(x.created_at)} · expires ${when(x.expires_at)}</span></div><button data-copy="${x.token}">${icon('link')} ${'share' in navigator && matchMedia('(pointer:coarse)').matches ? 'Share' : 'Copy'}</button><button class="danger" data-revoke="${x.token}">Turn off</button></div>`,
@@ -116,7 +145,7 @@ export function shareDialog(only: string[] = []) {
           (b.onclick = () =>
             run(async () => {
               if (!confirm('Turn off this link? Anyone using it will lose access.')) return;
-              await revokeShare(b.dataset.revoke!);
+              await links.revoke(mine.find(x => x.token === b.dataset.revoke)!);
               toast('Link turned off');
               await draw();
             })),
@@ -131,9 +160,8 @@ export function shareDialog(only: string[] = []) {
       btn = f.querySelector('button')!;
     btn.disabled = true;
     try {
-      await syncNow(remoteChanged);
       const v = Object.fromEntries(new FormData(f));
-      const x = await createShare(
+      const x = await links.create(
         board.id,
         v.permission as Permission,
         Number(v.expires),

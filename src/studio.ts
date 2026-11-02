@@ -168,7 +168,11 @@ export function toLocal(type: Type, s: Rec, old: Rec | undefined, c: Ctx): Rec {
     studio_id: 'local-studio',
     created_at: s.createdAt || old?.created_at || now,
     updated_at: s.updatedAt || now,
-    created_by: old?.created_by || (s.authorName ? 'guest' : 'local-owner'),
+    // A client's writes through a link carry `guest:<browser id>` (Art-Talk-Back D-092): client picks and "removed by
+    // a client" read it, as they did with old sync's records.
+    created_by: String(s.createdBy ?? '').startsWith('guest:')
+      ? s.createdBy
+      : old?.created_by || (s.authorName ? 'guest' : 'local-owner'),
     actor_type: old?.actor_type || 'human',
     version: (old?.version || 0) + 1,
     deleted_at: s.deletedAt || null,
@@ -836,6 +840,83 @@ function create(host: Host) {
     }
     return counts();
   }
+  // -------------------------------------------------------------- client links (stage 5: Art-Talk-Back D-090…D-095)
+  /** A link as the share dialog knows it (the old Worker's shape), with this device's board id. */
+  type Link = {
+    id: string;
+    version: number;
+    token: string;
+    board_id: string;
+    permission: 'view' | 'comment' | 'contribute';
+    created_at: string;
+    expires_at: string | null;
+    locked: boolean;
+    pin_count: number | null;
+  };
+  const asLink = (x: Rec): Link => {
+    const alias = readState().alias;
+    return {
+      id: x.id,
+      version: x.version,
+      token: x.token,
+      board_id: Object.keys(alias).find(k => alias[k] === x.boardId) || x.boardId,
+      permission: x.permission,
+      created_at: x.createdAt,
+      expires_at: x.expiresAt,
+      locked: !!x.locked,
+      pin_count: x.pinCount ?? null,
+    };
+  };
+  const words = (e: unknown, notThere: string) => {
+    if (e instanceof ApiError && e.status === 404) return Error(notThere);
+    if (e instanceof ApiError && e.status === 401)
+      return Error('Your studio sign-in has ended. Sign in again in Studio account.');
+    if (e instanceof ApiError && e.status === 503)
+      return Error('The studio can’t be reached just now. Try again in a moment.');
+    return e as Error;
+  };
+  const links = {
+    async list(): Promise<Link[]> {
+      try {
+        return ((await (await client()).request('GET', '/shares')).items as Rec[]).map(asLink);
+      } catch (e) {
+        throw words(e, 'The studio can’t list links just now.');
+      }
+    },
+    /** The board (and chosen cards) go up first, so the link has them. */
+    async create(boardId: string, permission: Link['permission'], days: number, password: string, pinIds: string[]) {
+      await sync();
+      const alias = readState().alias,
+        sid = (id: string) => alias[id] || id;
+      try {
+        return asLink(
+          await (
+            await client()
+          ).request('POST', '/shares', {
+            json: {
+              boardId: sid(boardId),
+              permission,
+              expiresDays: days,
+              ...(password ? {password} : {}),
+              ...(pinIds.length ? {pinIds: pinIds.map(sid)} : {}),
+            },
+          }),
+        );
+      } catch (e) {
+        throw words(
+          e,
+          'This board isn’t in the studio yet. Wait for it to sync, or import your library in Studio account.',
+        );
+      }
+    },
+    async revoke(l: Link) {
+      try {
+        await (await client()).request('DELETE', `/shares/${l.id}`, {headers: {'if-match': String(l.version)}});
+      } catch (e) {
+        if (!(e instanceof ApiError && e.status === 404)) throw words(e, '');
+      }
+    },
+  };
   async function keepMine(c: Conflict) {
     const s = readState();
     s.conflicts = s.conflicts.filter(x => !(x.type === c.type && x.id === c.id));
@@ -1063,5 +1144,5 @@ ${
     };
     return d;
   }
-  return {start, sync, panel, status: () => status};
+  return {start, sync, panel, links, status: () => status};
 }

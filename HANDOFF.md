@@ -1,9 +1,11 @@
 # Studio Wall handoff
 
-Updated: 2026-10-29 (Stage 4). Start here in a new chat; no old conversation is needed. Updates from 2026-10-24 and earlier are in `docs/history.md`.
+Updated: 2026-11-02 (Stage 5). Start here in a new chat; no old conversation is needed. Updates from 2026-10-24 and earlier are in `docs/history.md`.
 
-## Current state (2026-10-29) — read this first
-- **Stage 4 of the backend move (2026-10-29): "Import my library to the studio"**, a button in Studio account (shown on studio sync). It sends every board, card, comment and picture on the device, Recently deleted included; a second run adds nothing. Shipped: PR #36, deployed (Workers Builds `24107abd` success). See "Latest update — Stage 4". **The user's next step: run it once on the device with the whole library, then check the counts on the other device** (Step 1, item 8). Next agent work: Stage 5 (client links), which needs the user's answers to decisions 6 and 8 first.
+## Current state (2026-11-02) — read this first
+- **Stage 5 of the backend move (2026-11-02): client links on the platform.** On a device that uses Studio sync, the share dialog now makes and lists links in the studio (Art-Talk-Back migration 0009, D-090…D-095), and clients get the same page at the same `/s/<token>` address. Links made on Old sync keep working from the old Worker. Client cards go straight onto the board (decision 6, answered 2026-11-02); email invitations: not now (decision 8). Nothing looks different. See "Latest update — Stage 5". Shipping state: see that section's "Shipped".
+- **Library check before the import (2026-11-02):** found and fixed 2 Shortcut cards whose ids the studio can't take (PR #38, merged; Workers Builds `d33b2d53` for `c270b0a` succeeded). The import is safe to run now.
+- **Stage 4 of the backend move (2026-10-29): "Import my library to the studio"**, a button in Studio account (shown on studio sync). It sends every board, card, comment and picture on the device, Recently deleted included; a second run adds nothing. Shipped: PR #36, deployed (Workers Builds `24107abd` success). See "Latest update — Stage 4". **The user's next step: run it once on the device with the whole library, then check the counts on the other device** (Step 1, item 8). Stage 5 followed on 2026-11-02.
 - **Code clean-up done (2026-10-28), no change in what the app does or how it looks:** PRs #30–#34, all merged and deployed. The owner app's code now lives in `src/app/` (see `docs/history.md`, "Previous update — clean-up"). Nothing new to try on devices from it.
 - **Done 2026-10-26: Art-Talk-Back #43 merged** (docs + `studio-wall` CI job; "Deploy production API" run 163 green). Its red `show-tracker` check was art-show-tracker's e2e test removing a Playwright route while requests were in flight (that strands them in Chromium); fixed in art-show-tracker #17.
 - **Stage 3 of the backend move (2026-10-26): studio sign-in and studio sync, built behind a per-device switch.** Old sync stays the default, so nothing changes until the user switches a device in **Studio account** (sidebar, or Back up / move devices → Studio account on a phone). See "Latest update". Shipping state is in "Latest update" → Shipped.
@@ -20,10 +22,10 @@ Updated: 2026-10-29 (Stage 4). Start here in a new chat; no old conversation is 
 - **Access steps done 2026-10-22:** user created Access app "Studio Wall client links" (paths `s/*`, `api/s/*`, `assets/*` on studio-wall.bobdylan2000.workers.dev; policy "Clients" = Bypass/Everyone) and a service token "Studio Wall Shortcut" with a Service Auth policy "Shortcut" on the main app ("bobdylan2000.workers.dev"). Checked from outside without login: `/s/<token>` 200, `/api/s/<unknown 32-char token>/board` 404 "no longer active" (reaches the Worker), `/assets/*` 200; `/`, `/api/boards`, `/api/capture` still redirect to Access login. The reusable "Shortcut" policy was first created but not attached to the main app (app_count 0), so the Shortcut got the Access login page (empty notification, nothing in D1); the agent attached it via the Cloudflare API connector (main app policies now Owner 1, Shortcut 2). Service token itself not testable by the agent (secret stays with the user).
 - **iPhone Shortcut works (2026-10-22):** built per docs/SHARING_AND_CAPTURE.md §2 (photos-only version: Receive Images from Share Sheet → Convert to JPEG → Resize 2400 → Get Contents of URL POST /api/capture with the two CF-Access-Client-* headers, body File = Resized Image → Show Notification). First capture landed in D1 (pin created_by `shortcut`, with image, 16:41 UTC). iOS asks once to allow sending photos to the site ("Always Allow"). Not yet added: the link (Safari URL) branch.
 - **Connectors:** the session now has the Cloudflare API connector (mcp.cloudflare.com, Access read/edit), so Access apps/policies can be checked and changed by the agent; the older Workers-bindings connector still serves D1 queries.
-- **Next steps:** the user runs the import and checks the counts; then Stage 5 (client links on the platform). See "What happens next" and the prompt for a new chat.
+- **Next steps:** the user runs the import, checks the counts, and tries a client link made on Studio sync (Step 1, items 8–9); then Stage 6 (switch over). See "What happens next" and the prompt for a new chat.
 
-## What happens next (2026-10-29)
-The backend + AI work follows **docs/backend-and-ai-plan.md**. Stages 1–4 are done (Stage 4 on 2026-10-29); Stage 5 is next. Order:
+## What happens next (2026-11-02)
+The backend + AI work follows **docs/backend-and-ai-plan.md**. Stages 1–5 are done (Stage 5 on 2026-11-02); Stage 6 is next. Order:
 
 **Step 1 — the user tests on devices (no agent needed).** Report what works and what doesn't (a screenshot helps).
 1. iPhone Safari, a client link with *View, comment and add cards*: open "+ Add to this board" and tap each field (the page should not zoom); add a photo from the library, one from the camera, a link and a note; Remove one of your added cards; in the owner app after sync, find it in Recently deleted and restore it.
@@ -33,7 +35,8 @@ The backend + AI work follows **docs/backend-and-ai-plan.md**. Stages 1–4 are 
 5. iPhone Shortcut: add the link branch (docs/SHARING_AND_CAPTURE.md §2 step 4), then share a Safari page to it; the link should land in the Inbox.
 6. Older open checks: plain, password and chosen-card links in a private window; phone ↔ desktop sync (desktop boards and images on the phone, phone captures on desktop); HEIC upload in desktop Chrome; "Client picks" with a real client star.
 7. New (2026-10-26), Studio account, when convenient: on the iPhone open Back up / move devices → Studio account, sign in with the emailed code (or your password), and leave it on **Old sync**: nothing should change. Optional, on a second device too: switch both to **Studio sync**, make a new board with a photo and a note on one, and check it appears on the other within about 20 seconds; edit it on the other and check it comes back. Boards from before the switch stay on each device until Stage 4's import. Switch back to Old sync any time (it reloads; nothing is deleted). Client links need Old sync until Stage 5.
-8. New (2026-10-29), **the import**: on the device with the whole library (the desktop, per the plan), Studio account → sign in → **Studio sync** (it reloads) → Studio account → **Import my library to the studio**. Keep Studio Wall open until the line under the button starts with "Done." and says e.g. "In the studio: 8 of 8 boards, 79 of 79 cards, 4 of 4 comments" (the old sync copy had those numbers on 2026-11-02, Recently deleted included). Then on the phone: sign in, switch to Studio sync, wait for "Studio · synced", and check the boards, a few pictures, the comments, and Recently deleted (same items, thumbnails show; Restore one and see it come back on the desktop). Press the import once more on the desktop: the numbers stay the same. Client links still need Old sync, so switch a device back if a client needs one before Stage 5.
+8. New (2026-10-29), **the import**: on the device with the whole library (the desktop, per the plan), Studio account → sign in → **Studio sync** (it reloads) → Studio account → **Import my library to the studio**. Keep Studio Wall open until the line under the button starts with "Done." and says e.g. "In the studio: 8 of 8 boards, 79 of 79 cards, 4 of 4 comments" (the old sync copy had those numbers on 2026-11-02, Recently deleted included). Then on the phone: sign in, switch to Studio sync, wait for "Studio · synced", and check the boards, a few pictures, the comments, and Recently deleted (same items, thumbnails show; Restore one and see it come back on the desktop). Press the import once more on the desktop: the numbers stay the same. Since Stage 5, links can be made on Studio sync too (item 9).
+9. New (2026-11-02), **client links on Studio sync**: on a device on Studio sync, open a board (an imported one, or a new one) → Collaborate → make a link "View, comment and add cards". Open it on the iPhone in a private Safari window: the page looks as before; star a card, comment, add a photo, add a note and then Remove that note. On the desktop and the phone (Studio sync), within about 20 s: the comment and the photo card ("Added by …") appear, and the removed note is in Recently deleted, "removed by …". Then make a link with a password: the page asks once, then not again in that browser. Turn a link off: the page says it isn't available. Older links (made on Old sync) still open as before.
 
 **Step 2 — decisions.**
 Answered 2026-10-24 ("yes to all", the plan's recommendations):
@@ -43,18 +46,20 @@ Answered 2026-10-24 ("yes to all", the plan's recommendations):
 4. Old D1 `studio-wall-sync` and R2 `studio-wall-files` kept read-only for 30 days after the switch, then the user decides about deleting them: **yes**.
 5. Automatic subject/mood tags: **not now**, as recommended. "Yes to all" was read as accepting the recommendations; this costs money, so ask again before building it.
 
+Answered 2026-11-02: 6. Client cards: **straight onto the board** (as before). 8. Email invitations: **not now** (no cost; the user didn't ask for them).
+
 Still open (the agent asks, never builds on a guess):
-6. Client cards: keep adding straight onto the board (current), or have the owner approve them first?
 7. Cloudflare Images (costs money): yes / not now?
-8. Email invitations for client links (email service + API key): yes / not now?
 9. Owner app search field's second inner border: keep or remove?
 
 **Step 3 — agent work.**
 1. Fix anything Step 1 finds.
 2. **Done 2026-10-24: Stages 1 and 2** (see "Latest update"): both merged and in production.
 3. **Done 2026-10-26: Stage 3** (see "Latest update").
-4. **Done 2026-10-29: Stage 4**, "Import my library to the studio" (see "Latest update — Stage 4").
-   **Next: Stage 5, client links on the platform** (docs/backend-and-ai-plan.md §4): `shares`, guest sessions, password hashing, rate limits, chosen cards, contributions with daily limits, multi-image adds, remove-own-card, `deleted_by`, link previews, in studio-api (Art-Talk-Back, a numbered migration); the `/s/<token>` page stays here and calls studio-api through the `API` binding. Gate: `src/contribute.test.ts` and `src/share-password.test.ts` ported to studio-api tests, plus a Chromium check of the client page.
+4. **Done 2026-10-29: Stage 4**, "Import my library to the studio" (see "Latest update — Stage 4"). **Done 2026-11-02: Stage 5** (see "Latest update — Stage 5").
+   **Next: Stage 6, switch over** (docs/backend-and-ai-plan.md §4): the app syncs only with studio-api and the old `/api/sync` becomes read-only; old-sync links move to the studio (or are turned off); the iPhone Shortcut moves to a studio API key that can only save cards.
+   **What Stage 6 needs from the user:** (a) the import done and both devices on Studio sync, with the counts checked (items 8–9); (b) making the Shortcut's studio API key when the agent has built it (a secret: the user creates it and pastes it into the Shortcut; the agent never sees it); (c) later, Cloudflare Access changes in the Zero Trust dashboard (the user's step), and in 30 days the decision about deleting the old D1/R2 (decision 4). No money, no new Worker.
+   *(Stage 5 as planned, kept for reference)* **Stage 5, client links on the platform** (docs/backend-and-ai-plan.md §4): `shares`, guest sessions, password hashing, rate limits, chosen cards, contributions with daily limits, multi-image adds, remove-own-card, `deleted_by`, link previews, in studio-api (Art-Talk-Back, a numbered migration); the `/s/<token>` page stays here and calls studio-api through the `API` binding. Gate: `src/contribute.test.ts` and `src/share-password.test.ts` ported to studio-api tests, plus a Chromium check of the client page.
    **What Stage 5 needs from the user:** (a) decision 6 — client cards: straight onto the board (as now) or approved by you first; (b) decision 8 — email invitations: not now (recommended, no cost) or yes (needs an email service and its API key, a secret, possibly paid); (c) decision 7 (Cloudflare Images) doesn't block it: "not now" keeps today's pictures. (d) Run the Stage 4 import first, so the boards a link points at are in the studio. Nothing else: no new Worker (the page stays on `studio-wall`), and no live client links exist, so nothing has to move.
 5. *(Stage 3 as planned, kept for reference)*
    - a "Studio account" panel (email code or password, from inside the app on this origin, as Booth Studio does);
@@ -65,10 +70,10 @@ Still open (the agent asks, never builds on a guess):
    **What Stage 3 needs from the user:** nothing required. The studio account already exists: the user's email is studio-api's owner, and the emailed code or the password signs in. Optional: a staging Worker `studio-studio-wall-staging` bound to `studio-api-staging`, for trying studio sync without touching the live app. Its first deploy is the user's step, and the plan's gate doesn't need it. Decisions 6–9 above don't block Stage 3.
 3. Done in the 2026-10-23 round: owner told of client removals (#19), multi-image client adds (#20), Shortcut first-link fix (#21).
 
-**Start a new chat?** Yes, for Stage 5. Attach yitzhach/Studio-Wall and yitzhach/Art-Talk-Back to the chat, fill in the lines in angle brackets, and paste this prompt (written 2026-10-29):
+**Start a new chat?** Yes, for Stage 6. Attach yitzhach/Studio-Wall and yitzhach/Art-Talk-Back to the chat, fill in the lines in angle brackets, and paste this prompt (written 2026-11-02):
 
 ```
-Stage 5 of the Studio Wall backend move: client links on the platform.
+Stage 6 of the Studio Wall backend move: switch over.
 
 Repos: yitzhach/Studio-Wall (default branch main; merging deploys to
 Cloudflare) and yitzhach/Art-Talk-Back (default branch
@@ -76,40 +81,45 @@ claude/next-steps-y4vrwv). Work from each repo's current default branch.
 
 Read first:
 - Studio-Wall: HANDOFF.md ("Current state", "What happens next",
-  "Latest update — Stage 4"), AGENTS.md, docs/backend-and-ai-plan.md.
-  Client links today: worker/ and src/share.ts.
+  "Latest update — Stage 5"), AGENTS.md, docs/backend-and-ai-plan.md.
 - Art-Talk-Back: CLAUDE.md, docs/HANDOFF.md, docs/phase-5-studio-wall.md,
   docs/SHIPPING.md.
 
 Device test results: <what worked / what didn't, or "not tested yet">
 Import: <ran on desktop/phone; counts on the other device matched / didn't>
-Decision 6, client cards: <straight onto the board / I approve them first>
-Decision 8, email invitations: <not now / yes>
+Client link on Studio sync: <worked / didn't / not tried>
 
 This round:
-1. Fix anything my device tests or the import found.
-2. Build Stage 5: client links in studio-api, the /s/<token> page in
-   Studio-Wall calling it through the API binding. Gate: the ported
-   contribute and share-password tests pass in studio-api, plus a
-   Chromium check of the client page.
+1. Fix anything my device tests found.
+2. Plan Stage 6 in Art-Talk-Back docs/phase-5-studio-wall.md, then build
+   what doesn't need me: Studio Wall syncs only through the studio, old
+   /api/sync read-only, old links handled, the Shortcut's studio API key
+   path (I make the key myself).
 3. Before merging Studio-Wall: npm run format:check, npm test,
    npm run build, and npm run test:devices. In the cloud sandbox, run
    pnpm install in an Art-Talk-Back checkout first, then:
    STUDIO_PLATFORM=../Art-Talk-Back STUDIO_WALL_CHROMIUM=/opt/pw-browsers/chromium npm run test:devices
-4. Merge your own PRs once CI is green, app before platform as
-   docs/SHIPPING.md says. The "Workers Builds" preview check always
-   fails on Studio-Wall PR branches; ignore it. Check each Studio-Wall
-   deploy with the Cloudflare API connector (the Workers Builds build
-   for the merge commit on main must say success).
+4. Merge your own PRs once CI is green, in the order docs/SHIPPING.md
+   says. The "Workers Builds" preview check always fails on Studio-Wall PR
+   branches; ignore it. Check each Studio-Wall deploy with the Cloudflare
+   API connector (the Workers Builds build for the merge commit on main
+   must say success).
 5. Keep Studio-Wall's HANDOFF.md current, and Art-Talk-Back's
    docs/HANDOFF.md, DECISIONS.md and CHANGELOG.md.
-6. Stop after Stage 5. Tell me what Stage 6 (switch over) needs from me.
+6. Stop after Stage 6. Tell me what Stage 7 (the assistant) needs from me.
 
-Ask me before anything that changes how the app or the client page
-looks, needs my decision, costs money, needs secrets, is a new Worker's
-first deploy, or deletes data. At the end, list what to try on my
-devices.
+Ask me before anything that changes how the app looks, needs my
+decision, costs money, needs secrets, is a new Worker's first deploy,
+or deletes data. At the end, list what to try on my devices.
 ```
+
+## Latest update — Stage 5: client links on the platform (2026-11-02)
+- Device tests: none this round (the user couldn't test), so there was nothing to fix. Decisions answered: client cards go straight onto the board (6); email invitations not now (8).
+- **What changed for the user:** on a device using Studio sync, Collaborate → links are made, listed and turned off in the studio, with the same form (view / comment / add cards, expiry, password, chosen cards). The client page is the same page at the same `/s/<token>` address. On Old sync nothing changed. The share dialog's old "switch back to old sync" notice is gone; on Studio sync with an ended sign-in it says to sign in again.
+- **How:** studio-api (Art-Talk-Back migration 0009, D-090…D-095) holds the links and answers the client page in the old Worker's JSON. This Worker (`worker/index.ts`) sends `/api/s/<token>/*` to `/v1/public/shares/<token>/*` through the `API` binding when its D1 doesn't hold the token (so old links keep working here), and tells studio-api the path for the unlock cookie (`x-share-path`). Link previews for studio links come from studio-api (a password link still names nothing). `src/studio.ts` has `links` (list / create / revoke; board and card ids through `alias`, the board synced first), and a record a client wrote keeps `created_by` `guest:<id>` on the device, so client picks and "removed by" work as with old sync.
+- **Security:** link tokens aren't stored (derived from the link's id with the signing key; D-091); passwords are PBKDF2 hashes, 10 wrong tries per address per 15 minutes; a client's photo loses GPS/camera/dates before it is stored, and every picture a link serves is stripped on the way out (D-094). Making a link isn't an assistant tool yet (D-095).
+- **Tests:** `src/links.test.ts` (4: forwarding with path, headers, cookie and body; old token stays here; studio preview, escaped; no binding → old Worker). `tests/two-devices.mjs` 67 checks (12 new): a third browser (390 px) as the client opens a link made on Studio sync, sees the board and picture, stars, comments, adds a note and a picture, removes the note; both owner devices get the comment and the picture card, the desktop's Recently deleted has the note "removed by Ana"; a password link asks once (wrong password refused); a turned-off link says it isn't available; no page errors. Studio-api: `test/shares.test.ts` 22 (this repo's `contribute.test.ts` and `share-password.test.ts` ported), `test/strip.test.ts`, tenancy sweep. `npm test` 92.
+- **Shipped:** platform first (the app calls routes that didn't exist): Art-Talk-Back PR → "Deploy production API" applies 0009 → this PR. (Filled in after the merges.)
 
 ## Latest update — Stage 4: import my library to the studio (2026-10-29)
 - Device tests: none supplied this round (the prompt's placeholders were left empty), so there was nothing to fix. Which device has the whole library wasn't said either; the plan says the desktop, and the steps above work from either.
@@ -125,22 +135,6 @@ devices.
 - **Art-Talk-Back:** unchanged; studio-api already had everything the import needs.
 - **Library check before the first real import (2026-11-02), read-only:** the old sync copy (D1 `studio-wall-sync`) has 8 boards, 79 cards (24 in Recently deleted; 75 with a picture) and 4 comments, one owner. Each record was checked against the studio's rules on Cloudflare's side, returning only problems, never card text or client comments. Names, links, palettes, tags, drawings, comments: all fine. **One problem, fixed:** 2 cards (iPhone Shortcut captures) have ids the old Worker makes (32 hex digits, `worker/index.ts` `newId`), and the studio only takes ULIDs. The SDK would have swapped in a new id, so the import would never have matched those cards again and could have added a duplicate on every sync. Now such a record maps onto a studio id made from its own id (`studioIdFor`, kept in `alias` like the Inbox), the same on every device, so the phone's old-sync copy matches it too. Comments and covers pointing at such a card follow. Future Shortcut captures and client cards (still made by the old Worker until stages 5–6) are covered the same way. Tests: 3 more in `src/studio.test.ts` (88 in all); `tests/two-devices.mjs` adds a Shortcut-style card to the older library (55 checks).
 - **Shipped 2026-10-29:** PR #36 merged (`ee4686e`); CI `check` green; Workers Builds on main succeeded (build `24107abd`, checked via the Cloudflare API connector). The PR's own preview builds failed as they always do here.
-
-## Latest update — Stage 3: studio sign-in and studio sync (2026-10-26)
-- Device tests: none this round ("not tested yet"), so there was nothing to fix.
-- **Studio account** (sidebar button; on a phone: Back up / move devices → Studio account): the studio's emailed code or password, set/change/remove password, sign out. Signing in alone changes nothing.
-- **How this device syncs:** Old sync (default, `/api/sync` as before) or Studio sync. Switching reloads the page, so only one of them runs. On Studio sync the share dialog says client links need Old sync (they live on the old Worker until Stage 5).
-- **Studio sync** (`src/studio.ts`, loaded only when signed in; `src/studio-session.ts` is the tiny always-loaded part):
-  - `plan()` compares every local record with the SDK's copy against the last agreed state (a hash per record, kept in localStorage `studio-wall-studio-sync`). Only this device moved → create / update (changed fields only) / delete / restore. Only the studio moved → `library.merge` with `studio: true` (skips newer-wins). Both moved → the studio's copy wins and a review card in Studio account offers "Use this device’s version". The server's own conflicts (two offline edits) make the same card. Art-Talk-Back D-087.
-  - What goes up: what the studio already has, what's made on this device after switching, the Inbox, and what those need (a new card's board). Older boards wait for Stage 4's import (D-088). Each device's Inbox maps onto the studio's Inbox.
-  - Deletes go last; cards deleted with their board go with the board's delete/restore. Refused creates/restores stay local, listed under "Not in the studio" in the panel, until changed (e.g. restoring a card whose board is deleted in the studio: "Restore its board first").
-  - Pictures: uploaded once the card is on the server (`/v1/files/upload-url`, PUT, `attach` to the pin), then `fileId` is set; other devices fetch by signed link into IndexedDB.
-  - Syncs on a local change (1 s later), on focus, visibility and reconnect, and every 20 s. Status in the sidebar footer and the phone header button: "Studio · synced / syncing… / offline · N changes waiting / sign in again / N cards to review".
-  - A sign-in the studio ends keeps the device's waiting changes; signing in again as the same person sends them. Sign-out deletes only the studio's copy on this device (IndexedDB `studio-wall.studio`), never the boards.
-- **Offline service worker:** `/v1/*` is never cached (scripts/sw.mjs), like `/api/*`; it would otherwise have replayed old sync pulls and sign-in answers offline. The two-device run keeps the service worker on.
-- **Tests:** `src/studio.test.ts` (13: mapping, scope, Inbox, conflicts, deletes and restores, refusals). `tests/two-devices.mjs` (`npm run test:devices`, 36 checks): the built app + its Worker + the real studio-api under `wrangler dev` from an Art-Talk-Back checkout; desktop and a 390 px phone; signed out → no `/v1` and no studio chunk; sign-in; switch; board + idea + picture + comment up; phone gets them (picture opens), shares the Inbox, no sideways scroll; edits both ways; offline edit and new card after reconnect; conflict and review card; board delete and restore with its cards; sign-out keeps the boards. `SHOTS=<dir>` saves panel screenshots.
-- **CI (new):** `.github/workflows/ci.yml`, job `check`: `npm test`, build, `src/vendor/studio-sdk.js` against the platform's `bundle:esm --check`, then the two-device run with the network cut (like booth-studio). Art-Talk-Back got a matching `studio-wall` job. `playwright` 1.56.1 is a dev dependency.
-- **Shipped 2026-10-26:** PR #27 merged (`c52854f`). Workers Builds on main succeeded (build `f79ba18d`). The live site's `main-BGIpcUyD.js` has the Studio account button and its `studio-CVpRMSjl.js` chunk has the studio sync code (checked by fetching the deployed assets). The PR's own preview builds failed as they always do here (no `previews` block). Platform side: Art-Talk-Back #43 (docs, D-087…D-089, `studio-wall` CI job) is open; its `show-tracker` check failed 3 times in the pull-request run (it passed in the push run and locally); see the open item at the top of "Current state".
 
 ## Goal and design
 GitHub: yitzhach/Studio-Wall. An image-first private inspiration workspace, later sharing client mood boards through the studio-wide backend. Approved direction: Dark Gallery default + identical light mode, Focus View for pins. TypeScript/Vite with a small vanilla UI, idb and Vitest. Cloudflare backend belongs to a separate, unfinished multi-app platform.
