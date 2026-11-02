@@ -342,6 +342,23 @@ try {
   await addIdea(A, "On a deleted board", "Gone with its board");
   await addPicture(A, "Deleted with its board");
   await deleteBoard(A);
+  // A card as the old Worker makes them (iPhone Shortcut, client links): its id isn't a ULID, which the studio needs.
+  // Written straight into the device's store, as old sync would; a copy of "Old picture" with its own image.
+  await A.page.evaluate(async () => {
+    const db = await new Promise((ok) => {
+      const q = indexedDB.open("studio-wall-v1");
+      q.onsuccess = () => ok(q.result);
+    });
+    const get = (store, key) => new Promise((ok) => (db.transaction(store).objectStore(store).get(key).onsuccess = (e) => ok(e.target.result)));
+    const all = await new Promise((ok) => (db.transaction("pins").objectStore("pins").getAll().onsuccess = (e) => ok(e.target.result)));
+    const src = all.find((p) => p.meta?.title === "Old picture");
+    const blob = await get("files", src.file_ref);
+    const tx = db.transaction(["pins", "files"], "readwrite");
+    tx.objectStore("files").put(blob, "5F0C2B7E9A1D4C3B8E6F0A1B2C3D4E5F");
+    tx.objectStore("pins").put({ ...src, id: "3BDE4B3D1B0047599ABA5A74AE9FD4C1", file_ref: "5F0C2B7E9A1D4C3B8E6F0A1B2C3D4E5F", created_by: "shortcut", meta: { ...src.meta, title: "Captured by the Shortcut" } });
+    await new Promise((ok) => (tx.oncomplete = ok));
+    db.close();
+  });
   await A.page.reload();
   await A.page.waitForSelector(".topline h1");
   check("signed out: nothing calls /v1", A.v1.length === 0, A.v1.join(", "));
@@ -493,6 +510,7 @@ try {
   check("phone: the same counts as the desktop (boards, cards, comments; live and deleted)", JSON.stringify(counts.desktop) === JSON.stringify(counts.phone), JSON.stringify(counts));
   await openBoard(B, "Old board");
   await hasCard(B, "From before the studio", "has the older idea card");
+  await until(B, () => [...document.querySelectorAll(".pin")].some((p) => p.textContent.includes("Captured by the Shortcut") && p.querySelector("img")?.complete && p.querySelector("img").naturalWidth > 0), null, "has the Shortcut card (an id the studio can't take), with its picture");
   await until(B, () => [...document.querySelectorAll(".pin")].some((p) => p.textContent.includes("Old picture") && p.querySelector("img")?.complete && p.querySelector("img").naturalWidth > 0), null, "the older picture opens");
   check("phone: has the older comment", await B.page.isVisible('.feedback article:has-text("An older comment")'));
   check("phone: the deleted board isn't on the board list", !(await B.page.evaluate(() => [...document.querySelectorAll(".board-card")].some((b) => b.textContent.includes("Old deleted board")))));
