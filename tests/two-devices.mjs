@@ -20,6 +20,10 @@
      import       stage 4: "Import my library to the studio" on the desktop sends the older library, pictures
                   and Recently deleted included; the phone ends up with the same counts, the pictures open,
                   Recently deleted carries over and restores; a second run adds nothing.
+     links        stage 5: a client link made on studio sync opens in a third browser (the client, 390 px) at
+                  /s/<token>, the same page as before; the client's star, comment, added picture and a card
+                  they added then removed reach both owner devices (Recently deleted, "removed by"); a password
+                  link asks once; a link turned off says it isn't available.
      sign-out     signing out keeps everything on the device and goes back to old sync.
 
    The studio API lives in yitzhach/Art-Talk-Back. Point STUDIO_PLATFORM at a checkout of it with
@@ -532,6 +536,79 @@ try {
   await openBoard(A, "Old deleted board");
   await until(A, () => document.querySelectorAll(".pin").length === 2, null, "with both its cards");
   await until(A, () => [...document.querySelectorAll(".pin img")].some((i) => i.complete && i.naturalWidth > 0), null, "and its picture");
+
+  console.log("client links");
+  await openBoard(A, "Old board");
+  /** Make a link in the share dialog; its token is on the new row's Copy button. */
+  const makeLink = async (permission, password = "") => {
+    await A.page.click(visible("[data-action=share]"));
+    await A.page.waitForSelector("#new-link");
+    await A.page.waitForSelector("#link-list .link-row, #link-list .hint:not(:has-text('Loading'))");
+    const before = await A.page.$$eval("#link-list [data-copy]", (b) => b.map((x) => x.dataset.copy));
+    await A.page.selectOption("#new-link [name=permission]", permission);
+    if (password) await A.page.fill("#new-link [name=password]", password);
+    await A.page.click("#new-link button.primary");
+    await A.page.waitForFunction((n) => document.querySelectorAll("#link-list [data-copy]").length > n, before.length);
+    const token = (await A.page.$$eval("#link-list [data-copy]", (b) => b.map((x) => x.dataset.copy))).find((t) => !before.includes(t));
+    await A.page.click("#modal .close");
+    return token;
+  };
+  const token = await makeLink("contribute");
+  check("links: a link made on studio sync", /^[0-9a-f]{64}$/.test(token || ""), token);
+  const C = await device(browser, "client", { width: 390, height: 844 });
+  await C.page.goto(`${ORIGIN}/s/${token}`, { waitUntil: "load" });
+  await C.page.waitForSelector('.share-head h1:has-text("Old board")');
+  check("client: the board, its idea card", await C.page.isVisible('.pin:has-text("From before the studio")'));
+  await until(C, () => [...document.querySelectorAll(".pin img")].some((i) => i.complete && i.naturalWidth > 0), null, "the board's picture opens");
+  await C.page.click('.pin-wrap:has-text("Old idea") [data-star]');
+  await C.page.waitForSelector('.pin-wrap:has-text("Old idea") [data-star][aria-pressed=true]');
+  await C.page.fill("#comment-form [name=name]", "Ana");
+  await C.page.fill("#comment-form [name=text]", "Love the old idea");
+  await C.page.click("#comment-form button.primary");
+  await C.page.waitForSelector('.share-feedback article:has-text("Love the old idea")');
+  await C.page.click(".share-add summary");
+  await C.page.fill("#add-form [name=note]", "Brass handles");
+  await C.page.click("#add-form button.primary");
+  await C.page.waitForSelector('.pin:has-text("Brass handles")');
+  await C.page.click(".share-add summary");
+  await C.page.setInputFiles("#add-form [name=image]", { name: "client.png", mimeType: "image/png", buffer: png(40, 24) });
+  await C.page.fill("#add-form [name=title]", "From Ana");
+  await C.page.click("#add-form button.primary");
+  await C.page.waitForSelector('.pin:has-text("From Ana") img');
+  await C.page.click('.pin-wrap:has-text("Brass handles") [data-remove]');
+  await C.page.waitForFunction(() => !document.body.textContent.includes("Brass handles"));
+  check("client: no sideways scroll at 390 px", await C.page.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1));
+
+  for (const d of [A, B]) {
+    await openBoard(d, "Old board");
+    await until(d, () => document.querySelector(".feedback")?.textContent.includes("Love the old idea"), null, "gets the client's comment");
+    await until(d, () => [...document.querySelectorAll(".pin")].some((p) => p.textContent.includes("Added by Ana") && p.querySelector("img")?.complete && p.querySelector("img").naturalWidth > 0), null, "gets the client's picture card");
+  }
+  await openTrash(A);
+  check("desktop: the removed card is in Recently deleted, removed by the client", await A.page.isVisible('.trash-row:has-text("Brass handles"):has-text("removed by Ana")'));
+  await A.page.click("#modal .close");
+
+  const locked = await makeLink("comment", "coastal-blue-9");
+  await C.page.goto(`${ORIGIN}/s/${locked}`, { waitUntil: "load" });
+  await C.page.waitForSelector("#unlock-form");
+  await C.page.fill("#unlock-form [name=password]", "wrong-password");
+  await C.page.click("#unlock-form button");
+  await C.page.waitForSelector('#unlock-form .error:has-text("isn’t right")');
+  await C.page.fill("#unlock-form [name=password]", "coastal-blue-9");
+  await C.page.click("#unlock-form button");
+  await C.page.waitForSelector('.share-head h1:has-text("Old board")');
+  await C.page.reload();
+  await C.page.waitForSelector('.share-head h1:has-text("Old board")');
+  check("client: a password link asks once in this browser", !(await C.page.isVisible("#unlock-form")));
+
+  await A.page.click(visible("[data-action=share]"));
+  await A.page.click(`[data-revoke="${token}"]`);
+  await A.page.waitForFunction((t) => !document.querySelector(`[data-revoke="${t}"]`), token);
+  await A.page.click("#modal .close");
+  await C.page.goto(`${ORIGIN}/s/${token}`, { waitUntil: "load" });
+  await C.page.waitForSelector('.share-head h1:has-text("This link isn’t available")');
+  check("client: a link turned off says it isn't available", true);
+  check("client: no page errors", C.errors.length === 0, C.errors.slice(0, 5).join(" | "));
 
   console.log("sign-out");
   await openStudio(B);

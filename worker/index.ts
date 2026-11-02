@@ -8,6 +8,9 @@
 // Images lose their hidden metadata (GPS, camera, dates) when stored, and again when a client link serves them.
 // /v1/* goes untouched to the studio platform's studio-api through the API service binding (backend plan, stage 2):
 // the studio's own sign-in and data. Without the binding it answers 503, and nothing else here changes.
+// Client links made on studio sync live in studio-api (stage 5, Art-Talk-Back D-090): /api/s/<token>/* for a token
+// this Worker's D1 doesn't hold goes to /v1/public/shares/<token>/*, which answers in the same JSON, so the client
+// page is the same for both. Old tokens keep working here until stage 6.
 import {stripMetadata} from './strip';
 type Env = {
   ASSETS: {fetch(r: Request): Promise<Response>};
@@ -772,6 +775,20 @@ async function shareApi(req: Request, env: Env, url: URL, token: string, rest: s
   return json({error: 'Not found.'}, 404);
 }
 
+/** Is this an old link, held in this Worker's D1? (A studio link isn't.) */
+async function oldLink(env: Env, token: string) {
+  if (!env.DB || !TOKEN.test(token)) return false;
+  await ensureSchema(env);
+  return !!(await env.DB.prepare('SELECT 1 FROM shares WHERE token=?').bind(token).first());
+}
+/** A client's request for a studio link, sent on to studio-api; the unlock cookie stays on this link's own path. */
+function studioLink(req: Request, env: Env, url: URL, token: string, rest: string) {
+  const to = new URL(`/v1/public/shares/${token}${rest}${url.search}`, url);
+  const fwd = new Request(to, req);
+  fwd.headers.set('x-share-path', `/api/s/${token}`);
+  return forwardToStudio(fwd, env);
+}
+
 /** The client page, with link-preview tags (iMessage, email, social) filled in for active links. */
 async function sharePage(env: Env, url: URL, token: string) {
   // Static hosting serves share.html at /share (it redirects the .html form).
@@ -779,7 +796,15 @@ async function sharePage(env: Env, url: URL, token: string) {
   let html = await page.text();
   let tags =
     '<meta property="og:title" content="Studio Wall"><meta property="og:description" content="A shared mood board">';
-  if (env.DB) {
+  if (env.API && !(await oldLink(env, token).catch(() => false))) {
+    // A studio link: its preview comes from studio-api. A password link answers 401 there, so it names nothing.
+    const r = await env.API.fetch(new Request(new URL(`/v1/public/shares/${token}`, url))).catch(() => null);
+    const share = r?.ok ? ((await r.json().catch(() => null)) as any) : null;
+    if (share?.board) {
+      const n = share.pins?.length || 0;
+      tags = `<meta property="og:title" content="${esc(share.board.name)}"><meta property="og:description" content="${esc(share.board.description || `${n} reference${n === 1 ? '' : 's'} · shared from Studio Wall`)}"><meta property="og:type" content="website"><meta property="og:url" content="${esc(url.origin + url.pathname)}">${share.cover ? `<meta property="og:image" content="${esc(`${url.origin}/api/s/${token}/files/${share.cover}`)}"><meta name="twitter:card" content="summary_large_image">` : ''}<title>${esc(share.board.name)} · Studio Wall</title>`;
+    }
+  } else if (env.DB) {
     const share = await openShare(env, token).catch(() => null);
     // A password link's preview names nothing: no board name, description or cover image.
     if (share && !share.password) {
@@ -823,9 +848,11 @@ export default {
       const page = url.pathname.match(/^\/s\/([A-Za-z0-9_-]{32,64})\/?$/);
       if (page) return await sharePage(env, url, page[1]);
       if (url.pathname.startsWith('/api/')) {
+        const shared = url.pathname.match(/^\/api\/s\/([A-Za-z0-9_-]{32,64})(\/.*)?$/);
+        if (shared && env.API && !(await oldLink(env, shared[1])))
+          return await studioLink(req, env, url, shared[1], shared[2] || '');
         if (!env.DB || !env.FILES || !env.ACCESS_TEAM_DOMAIN || !env.ACCESS_AUD)
           return json({error: 'Sync is not configured.'}, 503);
-        const shared = url.pathname.match(/^\/api\/s\/([A-Za-z0-9_-]{32,64})(\/.*)?$/);
         if (shared) return await shareApi(req, env, url, shared[1], shared[2] || '');
         return await ownerApi(req, env, url, ctx);
       }
